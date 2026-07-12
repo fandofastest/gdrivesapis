@@ -1,0 +1,6 @@
+.vercel
+/cache
+/cache/
+*.part
+*.ranges.json
+*.json.json
