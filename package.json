@@ -5,7 +5,8 @@
   "type": "module",
   "main": "scanDriveMovies.js",
   "scripts": {
-    "start": "node scanDriveMovies.js",
+    "start": "node server.js",
+    "scan": "node scanDriveMovies.js",
     "server": "node server.js",
     "api": "node apiServer.js"
   },
