@@ -1,25 +1,25 @@
 # Large local caches / artifacts
-cache/
+/cache/
 
 # Local credentials / tokens
-credentials.json
-token.json
+/credentials.json
+/token.json
 *.pem
 
 # Local env files
-.env
-.env.*
+/.env
+/.env.*
 
 # Non-API services/scripts not needed for Vercel API deployment
-scanDriveMovies.js
-server.js
-driveStream.js
-cacheManager.js
-auth.js
+/scanDriveMovies.js
+/server.js
+/driveStream.js
+/cacheManager.js
+/auth.js
 
 # Repo / tooling
-.git/
-.vscode/
+/.git/
+/.vscode/
 
 # Logs
 *.log
