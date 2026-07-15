@@ -123,7 +123,7 @@ async function buildApp() {
   const playIndexes = await plays.indexes().catch(() => []);
   const hasLegacyDriveIndex = Array.isArray(playIndexes) && playIndexes.some((i) => i?.name === 'driveFileId_1');
   if (hasLegacyDriveIndex) {
-    await plays.dropIndex('driveFileId_1').catch(() => {});
+    await plays.dropIndex('driveFileId_1').catch(() => { });
   }
 
   await plays
@@ -135,7 +135,7 @@ async function buildApp() {
         partialFilterExpression: { driveFileId: { $type: 'string' }, movieId: { $exists: false } },
       },
     )
-    .catch(() => {});
+    .catch(() => { });
 
   await plays
     .createIndex(
@@ -146,7 +146,7 @@ async function buildApp() {
         partialFilterExpression: { movieId: { $type: 'string' } },
       },
     )
-    .catch(() => {});
+    .catch(() => { });
 
   // Health (keep both for convenience when deployed behind /api)
   app.get('/health', (req, res) => {
@@ -492,8 +492,8 @@ async function buildApp() {
       const contentUpdate = { $inc: { playCount: 1 }, $set: { lastPlayedAt: now } };
       await movies
         .updateOne({ $or: [{ driveFileId }, { 'files.driveFileId': driveFileId }] }, contentUpdate)
-        .catch(() => {});
-      await episodes.updateOne({ driveFileId }, contentUpdate).catch(() => {});
+        .catch(() => { });
+      await episodes.updateOne({ driveFileId }, contentUpdate).catch(() => { });
 
       res.status(307);
       res.setHeader('Location', url);
@@ -531,7 +531,7 @@ async function buildApp() {
       );
 
       const contentUpdate = { $inc: { playCount: 1 }, $set: { lastPlayedAt: now } };
-      await movies.updateOne({ _id: oid }, contentUpdate).catch(() => {});
+      await movies.updateOne({ _id: oid }, contentUpdate).catch(() => { });
 
       res.status(307);
       res.setHeader('Location', url);
