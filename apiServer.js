@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { getApp } from './apiApp.js';
 import { closeMongo } from './db.js';
+import { initCronScheduler, stopCronScheduler } from './cronScheduler.js';
 
 async function main() {
   const app = await getApp();
@@ -8,9 +9,11 @@ async function main() {
 
   const server = app.listen(port, () => {
     console.log(`[api] listening on :${port}`);
+    initCronScheduler();
   });
 
   const shutdown = async () => {
+    stopCronScheduler();
     server.close(() => {});
     await closeMongo().catch(() => {});
     process.exit(0);

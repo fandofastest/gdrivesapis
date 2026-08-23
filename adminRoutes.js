@@ -323,6 +323,38 @@ export function createAdminRouter() {
     }
   });
 
+  // Daily Cron Endpoint (00:00 Vercel Cron / Scheduled Trigger)
+  router.get('/cron/scan', async (req, res) => {
+    const cronHeader = req.headers['x-vercel-cron'];
+    const authHeader = req.headers['authorization'];
+    const adminToken = req.headers['x-admin-token'] || req.cookies?.admin_token;
+    const cronSecret = process.env.CRON_SECRET;
+
+    const isVercelCron = Boolean(cronHeader);
+    const isSecretAuthorized = cronSecret && authHeader === `Bearer ${cronSecret}`;
+    const isAdmin = adminToken && adminToken === getExpectedToken();
+
+    if (!isVercelCron && !isSecretAuthorized && !isAdmin) {
+      return res.status(401).json({ error: 'unauthorized', message: 'Akses cron tidak diizinkan' });
+    }
+
+    try {
+      const status = scanManager.getStatus();
+      if (status.isRunning) {
+        return res.json({ success: true, message: 'Process scan sedang berjalan.', status });
+      }
+
+      // Launch scan in background non-blocking
+      scanManager.startScan({ mode: 'full' }).catch((err) => {
+        console.error('[cron] Error in background scan:', err);
+      });
+
+      res.json({ success: true, message: 'Auto-scan harian 00:00 berhasil dimulai.', status: scanManager.getStatus() });
+    } catch (e) {
+      res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+
   // Configuration / Environment
   router.get('/config', requireAdmin, (req, res) => {
     res.json({

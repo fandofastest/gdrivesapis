@@ -1,5 +1,11 @@
 {
   "version": 2,
+  "crons": [
+    {
+      "path": "/api/admin/cron/scan",
+      "schedule": "0 0 * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/index.js" },
     { "source": "/admin", "destination": "/admin/index.html" },
