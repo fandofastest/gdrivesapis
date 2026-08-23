@@ -1,4 +1,11 @@
 import { getApp } from '../apiApp.js';
+import '../auth.js';
+import '../adminRoutes.js';
+import '../db.js';
+import '../scanManager.js';
+import '../scanDriveMovies.js';
+import '../driveStream.js';
+import '../cacheManager.js';
 
 export default async function handler(req, res) {
   try {
