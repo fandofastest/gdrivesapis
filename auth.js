@@ -58,13 +58,22 @@ async function getDbToken() {
 
 export async function loadOAuthClientFromCredentialsFile(credentialsPath = getCredentialsPath()) {
   let json = await getDbCredentials();
+  const isDbDummy = Boolean(
+    json &&
+      ((json.installed?.client_id && String(json.installed.client_id).startsWith('test_')) ||
+        (json.web?.client_id && String(json.web.client_id).startsWith('test_'))),
+  );
 
-  if (!json) {
+  if (!json || isDbDummy) {
     try {
       const raw = await fs.readFile(credentialsPath, 'utf8');
-      json = JSON.parse(raw);
+      const fileJson = JSON.parse(raw);
+      if (fileJson && (fileJson.installed?.client_id || fileJson.web?.client_id)) {
+        json = fileJson;
+        saveCredentialsJson(fileJson).catch(() => {});
+      }
     } catch {
-      json = null;
+      if (isDbDummy) json = null;
     }
   }
 
@@ -88,17 +97,29 @@ export async function loadOAuthClientFromCredentialsFile(credentialsPath = getCr
 }
 
 export async function loadSavedToken(tokenPath = getTokenPath()) {
-  const dbToken = await getDbToken();
-  if (dbToken && (dbToken.access_token || dbToken.refresh_token)) {
+  let dbToken = await getDbToken();
+  const isDbDummy = Boolean(
+    dbToken &&
+      ((dbToken.access_token && String(dbToken.access_token).startsWith('test_')) ||
+        (dbToken.refresh_token && String(dbToken.refresh_token).startsWith('test_'))),
+  );
+
+  if (dbToken && !isDbDummy && (dbToken.access_token || dbToken.refresh_token)) {
     return dbToken;
   }
 
   try {
     const raw = await fs.readFile(tokenPath, 'utf8');
-    return JSON.parse(raw);
+    const fileToken = JSON.parse(raw);
+    if (fileToken && (fileToken.access_token || fileToken.refresh_token)) {
+      saveToken(tokenPath, fileToken).catch(() => {});
+      return fileToken;
+    }
   } catch {
-    return null;
+    // Ignore file read error
   }
+
+  return dbToken || null;
 }
 
 export async function saveToken(tokenPath = getTokenPath(), token = {}) {
