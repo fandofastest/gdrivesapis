@@ -1,3 +1,4 @@
+import express from 'express';
 import { getApp } from './apiApp.js';
 import './auth.js';
 import './adminRoutes.js';
@@ -7,10 +8,14 @@ import './scanDriveMovies.js';
 import './driveStream.js';
 import './cacheManager.js';
 
+let expressApp = null;
+
 export default async function handler(req, res) {
   try {
-    const app = await getApp();
-    return app(req, res);
+    if (!expressApp) {
+      expressApp = await getApp();
+    }
+    return expressApp(req, res);
   } catch (err) {
     console.error('[Vercel Handler Error]', err);
     res.status(500).json({
