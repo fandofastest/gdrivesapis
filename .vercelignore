@@ -10,13 +10,6 @@
 /.env
 /.env.*
 
-# Non-API services/scripts not needed for Vercel API deployment
-/scanDriveMovies.js
-/server.js
-/driveStream.js
-/cacheManager.js
-/auth.js
-
 # Repo / tooling
 /.git/
 /.vscode/
