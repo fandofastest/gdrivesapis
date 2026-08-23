@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "main": "scanDriveMovies.js",
+  "main": "index.js",
   "scripts": {
     "start": "node apiServer.js",
     "dev": "node apiServer.js",
