@@ -1,7 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'node:path';
 import { ObjectId } from 'mongodb';
 import { connectMongo } from './db.js';
+import { createAdminRouter } from './adminRoutes.js';
 
 function parseIntParam(v, def) {
   const n = Number.parseInt(String(v ?? ''), 10);
@@ -111,6 +113,15 @@ let appPromise;
 async function buildApp() {
   const app = express();
   app.disable('x-powered-by');
+
+  // Admin API & Static Admin UI
+  app.use('/api/admin', createAdminRouter());
+
+  const publicAdminPath = path.resolve('public/admin');
+  app.use('/admin', express.static(publicAdminPath));
+  app.get('/admin', (req, res) => {
+    res.sendFile(path.join(publicAdminPath, 'index.html'));
+  });
 
   const { db, movies, series, episodes } = await connectMongo();
   const plays = db.collection('plays');

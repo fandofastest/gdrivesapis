@@ -23,7 +23,11 @@ function requireEnv(name) {
   return v;
 }
 
-async function enrichMetadata({ mongoUri, tmdbApiKey }) {
+export async function enrichMetadata({ mongoUri, tmdbApiKey, onLog, onProgress, signal }) {
+  const log = (msg) => {
+    console.log(msg);
+    if (typeof onLog === 'function') onLog(msg);
+  };
   const { client, movies, series } = await connectMongo(mongoUri);
   const limit = createLimiter(Number(process.env.CONCURRENCY || '5'));
 
@@ -32,8 +36,14 @@ async function enrichMetadata({ mongoUri, tmdbApiKey }) {
   let scannedMovies = 0;
   let scannedSeries = 0;
 
+  const reportProgress = () => {
+    if (typeof onProgress === 'function') {
+      onProgress({ scanned: scannedMovies + scannedSeries, saved: updatedMovies + updatedSeries });
+    }
+  };
+
   try {
-    console.log('[enrich] start movies');
+    log('[enrich] start movies');
     const movieCursor = movies.find({
       $or: [
         { overview: null },
@@ -47,9 +57,11 @@ async function enrichMetadata({ mongoUri, tmdbApiKey }) {
     });
     const movieTasks = [];
     while (await movieCursor.hasNext()) {
+      if (signal?.aborted) break;
       const doc = await movieCursor.next();
       if (!doc?.driveFileId) continue;
       scannedMovies += 1;
+      reportProgress();
 
       movieTasks.push(
         limit(async () => {
@@ -297,7 +309,11 @@ function getIndexMode() {
   throw new Error(`Invalid INDEX_MODE: ${mode}. Use raw|full|enrich|migrate`);
 }
 
-async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey }) {
+export async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey, onLog, onProgress, signal }) {
+  const log = (msg) => {
+    console.log(msg);
+    if (typeof onLog === 'function') onLog(msg);
+  };
   const { client, movies, series, episodes } = await connectMongo(mongoUri);
   const limit = createLimiter(Number(process.env.CONCURRENCY || '5'));
 
@@ -310,8 +326,14 @@ async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey }) {
   let skippedDuplicate = 0;
   let skippedNotEpisode = 0;
 
+  const reportProgress = () => {
+    if (typeof onProgress === 'function') {
+      onProgress({ scanned, saved: migrated, skipped: skippedDuplicate + skippedNotEpisode });
+    }
+  };
+
   try {
-    console.log(`[migrate] start (dryRun=${dryRun})`);
+    log(`[migrate] start (dryRun=${dryRun})`);
 
     const cursor = movies.find({}, { projection: { driveFileId: 1, fileName: 1, driveLink: 1, fileSize: 1, resolution: 1, title: 1, year: 1, createdAt: 1 } });
     const tasks = [];
@@ -797,24 +819,22 @@ async function authorizeDriveOAuth2({ credentialsPath, tokenPath: tokenPathInput
   }
 }
 
-async function createDriveClientOAuth2() {
-  const credentialsPath = envOrDefault('GOOGLE_OAUTH_CREDENTIALS', path.resolve('credentials.json'));
-  const tokenPath = envOrDefault('GOOGLE_OAUTH_TOKEN_PATH', path.resolve('token.json'));
+import { getDriveClient } from './auth.js';
 
-  const auth = await authorizeDriveOAuth2({ credentialsPath, tokenPath });
-  return google.drive({ version: 'v3', auth });
+async function createDriveClientOAuth2(interactive = false) {
+  return getDriveClient({ interactive });
 }
 
 /**
  * Scan Google Drive for movie files inside DRIVE_FOLDER_ID and index into MongoDB.
- *
- * Notes for large libraries:
- * - Uses Drive pagination via nextPageToken
- * - Limits concurrent processing to avoid overwhelming TMDB/Mongo
- * - Dedupes by driveFileId
  */
-export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri }) {
-  const drive = await createDriveClientOAuth2();
+export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onProgress, onLog, signal, interactive = false }) {
+  const log = (msg) => {
+    console.log(msg);
+    if (typeof onLog === 'function') onLog(msg);
+  };
+
+  const drive = await createDriveClientOAuth2(interactive);
   const { client, movies, series, episodes } = await connectMongo(mongoUri);
 
   const mode = getIndexMode();
@@ -841,8 +861,30 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri }) {
   const foldersToScan = [driveFolderId];
   const seenFolders = new Set();
 
+  const reportProgress = () => {
+    if (typeof onProgress === 'function') {
+      onProgress({
+        scanned,
+        scannedFolders,
+        discoveredFolders,
+        detected,
+        saved,
+        skipped,
+        skippedNonVideo,
+        skippedParseFailed,
+        skippedDuplicate,
+        skippedFolder,
+      });
+    }
+  };
+
   try {
     while (foldersToScan.length > 0) {
+      if (signal?.aborted) {
+        log('[scan] Cancellation requested. Stopping scan...');
+        break;
+      }
+
       const folderId = foldersToScan.shift();
       if (!folderId || seenFolders.has(folderId)) continue;
       seenFolders.add(folderId);
@@ -850,6 +892,8 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri }) {
 
       let pageToken = undefined;
       do {
+        if (signal?.aborted) break;
+
         const res = await drive.files.list({
           q: `'${folderId}' in parents and trashed = false`,
           fields: 'nextPageToken, files(id, name, mimeType, size, webViewLink)',
@@ -865,8 +909,10 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri }) {
         pageToken = res.data.nextPageToken || undefined;
 
         scanned += files.length;
-        if (DEBUG || pagesFetched % 10 === 0) {
-          console.log(
+        reportProgress();
+
+        if (DEBUG || pagesFetched % 5 === 0) {
+          log(
             `[scan] folder=${folderId} page_items=${files.length} scanned_items=${scanned} folders_scanned=${scannedFolders} queue=${foldersToScan.length}`,
           );
         }
@@ -1084,7 +1130,7 @@ async function main() {
 }
 
 // Run only when executed directly (not when imported).
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {
     console.error('[fatal]', err);
     process.exitCode = 1;

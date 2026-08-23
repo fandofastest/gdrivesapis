@@ -6,6 +6,7 @@
   "main": "scanDriveMovies.js",
   "scripts": {
     "start": "node apiServer.js",
+    "dev": "node apiServer.js",
     "scan": "node scanDriveMovies.js",
     "server": "node server.js",
     "api": "node apiServer.js"

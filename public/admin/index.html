@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Control Panel - Drive Indexer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="loginSection" class="login-container">
+    <div class="glass-card login-card">
+      <div class="brand-logo">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h2>Drive Indexer Admin</h2>
+      </div>
+      <p class="subtitle">Masukkan password admin untuk mengakses control panel</p>
+      
+      <form id="loginForm">
+        <div class="input-group">
+          <label for="adminPassword">Password Admin</label>
+          <input type="password" id="adminPassword" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <div id="loginError" class="alert alert-danger hidden"></div>
+        <button type="submit" id="btnLogin" class="btn btn-primary btn-block">
+          <span>Masuk ke Dashboard</span>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Dashboard (Hidden until login) -->
+  <div id="dashboardSection" class="dashboard-layout hidden">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <span class="brand-title">DriveIndexer</span>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="tab-overview">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          <span>Overview</span>
+        </button>
+        <button class="nav-item" data-tab="tab-credentials">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span>Kredensial Google</span>
+        </button>
+        <button class="nav-item" data-tab="tab-scanner">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+          <span>Scanner & Logs</span>
+        </button>
+        <button class="nav-item" data-tab="tab-catalog">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <span>Kelola Katalog</span>
+        </button>
+        <button class="nav-item" data-tab="tab-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Pengaturan Server</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button id="btnLogout" class="btn btn-ghost btn-block">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <span>Keluar</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="top-header">
+        <div>
+          <h1 id="pageTitle">Dashboard Overview</h1>
+          <p class="text-muted" id="pageSubtitle">Status sistem & statistik perpustakaan media</p>
+        </div>
+        <div class="header-actions">
+          <span id="scannerBadge" class="status-badge status-idle">Scanner: Idle</span>
+          <button id="btnRefresh" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: OVERVIEW -->
+      <div id="tab-overview" class="tab-content active">
+        <!-- Stat Cards Grid -->
+        <div class="stats-grid">
+          <div class="glass-card stat-card border-purple">
+            <div class="stat-icon purple">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Total Film (Movies)</span>
+              <h3 id="statMovies" class="stat-value">0</h3>
+            </div>
+          </div>
+
+          <div class="glass-card stat-card border-indigo">
+            <div class="stat-icon indigo">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Total Serial (Series)</span>
+              <h3 id="statSeries" class="stat-value">0</h3>
+            </div>
+          </div>
+
+          <div class="glass-card stat-card border-emerald">
+            <div class="stat-icon emerald">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15V6a2 2 0 0 0-2-2H7l-4 4v11a2 2 0 0 0 2 2h11l4-4z"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="18" y1="6" x2="14" y2="6"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Total Episode</span>
+              <h3 id="statEpisodes" class="stat-value">0</h3>
+            </div>
+          </div>
+
+          <div class="glass-card stat-card border-pink">
+            <div class="stat-icon pink">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Total Pemutaran (Plays)</span>
+              <h3 id="statPlays" class="stat-value">0</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Readiness Grid -->
+        <div class="grid-2 gap-20 mt-20">
+          <!-- Google Auth Status Card -->
+          <div class="glass-card p-24">
+            <div class="card-header">
+              <h3>Google Drive OAuth Status</h3>
+              <span id="authStatusBadge" class="badge badge-warning">Memeriksa...</span>
+            </div>
+            <div class="status-list mt-15">
+              <div class="status-item">
+                <span>Credentials File (credentials.json)</span>
+                <span id="statusCreds" class="text-secondary">-</span>
+              </div>
+              <div class="status-item">
+                <span>OAuth Token (token.json)</span>
+                <span id="statusToken" class="text-secondary">-</span>
+              </div>
+              <div class="status-item">
+                <span>Client ID</span>
+                <code id="statusClientId" class="code-sm">-</code>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm mt-15" onclick="switchTab('tab-credentials')">Kelola Kredensial →</button>
+          </div>
+
+          <!-- Server & Cache Status Card -->
+          <div class="glass-card p-24">
+            <div class="card-header">
+              <h3>Server & Disk Cache</h3>
+              <span id="mongoStatusBadge" class="badge badge-success">MongoDB Connected</span>
+            </div>
+            <div class="status-list mt-15">
+              <div class="status-item">
+                <span>Drive Folder ID</span>
+                <code id="statusFolderId" class="code-sm">-</code>
+              </div>
+              <div class="status-item">
+                <span>Ukuran Cache File</span>
+                <span id="statusCacheSize" class="text-secondary">0 B</span>
+              </div>
+              <div class="status-item">
+                <span>Jumlah File Tersimpan di Cache</span>
+                <span id="statusCacheFiles" class="text-secondary">0 file</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm mt-15" onclick="switchTab('tab-settings')">Pengaturan Server →</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: CREDENTIALS MANAGEMENT -->
+      <div id="tab-credentials" class="tab-content">
+        <div class="grid-2 gap-20">
+          <!-- Upload Credentials Section -->
+          <div class="glass-card p-24">
+            <h3>1. Upload File Kredensial</h3>
+            <p class="text-muted text-sm mt-5">Upload file <code>credentials.json</code> dari Google Cloud Console atau <code>token.json</code> jika Anda sudah memiliki token.</p>
+
+            <div class="form-group mt-20">
+              <label>Pilih Jenis File</label>
+              <select id="uploadType" class="input-field">
+                <option value="credentials">credentials.json (OAuth Client Desktop/Web)</option>
+                <option value="token">token.json (Google Access & Refresh Token)</option>
+              </select>
+            </div>
+
+            <div class="dropzone mt-15" id="dropzone">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p class="dropzone-text">Klik atau seret file JSON ke sini</p>
+              <input type="file" id="fileInput" accept=".json" class="hidden">
+            </div>
+
+            <div class="form-group mt-15">
+              <label>Atau Paste Isian JSON Langsung</label>
+              <textarea id="jsonContent" rows="5" class="input-field code-font" placeholder='{"installed": {"client_id": "...", "client_secret": "..."}}'></textarea>
+            </div>
+
+            <button id="btnUploadCreds" class="btn btn-primary btn-block mt-15">Simpan Kredensial ke Server</button>
+            <div id="uploadAlert" class="alert mt-10 hidden"></div>
+          </div>
+
+          <!-- OAuth Authorization Code Exchange -->
+          <div class="glass-card p-24">
+            <h3>2. Otorisasi Google Account (Web Flow)</h3>
+            <p class="text-muted text-sm mt-5">Jika <code>credentials.json</code> sudah ada namun belum memiliki <code>token.json</code>, lakukan langkah berikut:</p>
+
+            <div class="step-box mt-15">
+              <span class="step-num">Langkah 1</span>
+              <p>Dapatkan URL Otorisasi dari server Anda.</p>
+              <button id="btnGetAuthUrl" class="btn btn-secondary btn-sm mt-10">Dapatkan Auth URL</button>
+            </div>
+
+            <div id="authUrlBox" class="auth-url-container hidden mt-10">
+              <p class="text-xs text-muted">Buka URL berikut di browser untuk mengizinkan akses Drive readonly:</p>
+              <div class="copy-url-group">
+                <input type="text" id="authUrlInput" readonly class="input-field input-sm">
+                <a id="authUrlLink" href="#" target="_blank" class="btn btn-primary btn-sm">Buka Link</a>
+              </div>
+            </div>
+
+            <div class="step-box mt-20">
+              <span class="step-num">Langkah 2</span>
+              <p>Paste Kode Otorisasi yang diberikan Google setelah Anda menyetujui:</p>
+              <div class="input-group mt-10">
+                <input type="text" id="oauthCodeInput" class="input-field" placeholder="Paste kode otorisasi di sini...">
+              </div>
+              <button id="btnSubmitCode" class="btn btn-emerald btn-block mt-10">Proses & Simpan Token</button>
+            </div>
+
+            <div id="oauthAlert" class="alert mt-10 hidden"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: SCANNER & LOGS -->
+      <div id="tab-scanner" class="tab-content">
+        <!-- Scan Controller Card -->
+        <div class="glass-card p-24">
+          <div class="flex-between align-center">
+            <div>
+              <h3>Kontrol Scan Google Drive</h3>
+              <p class="text-muted text-sm">Jalankan scanning folder Google Drive untuk memproses movie, series, episode, dan metadata TMDB.</p>
+            </div>
+            <div class="scan-actions flex-gap-10">
+              <button id="btnStartScan" class="btn btn-emerald">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <span>Mulai Scan</span>
+              </button>
+              <button id="btnStopScan" class="btn btn-danger hidden">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12"/></svg>
+                <span>Hentikan Scan</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Scan Options Form -->
+          <div class="scan-options-grid mt-20">
+            <div class="input-group">
+              <label for="scanMode">Mode Scan</label>
+              <select id="scanMode" class="input-field">
+                <option value="full">Full Scan (Drive + Metadata TMDB)</option>
+                <option value="raw">Raw Scan (Drive Saja Tanpa TMDB)</option>
+                <option value="enrich">Enrich Metadata (Lengkapi data TMDB yang kosong)</option>
+                <option value="migrate">Migrate Episodes (Perbaiki Episode salah klasifikasi)</option>
+              </select>
+            </div>
+
+            <div class="input-group">
+              <label for="scanFolderId">Drive Folder ID (Opsional override)</label>
+              <input type="text" id="scanFolderId" class="input-field" placeholder="Gunakan bawaan .env jika kosong">
+            </div>
+
+            <div class="input-group">
+              <label for="scanConcurrency">Concurrency Limit</label>
+              <input type="number" id="scanConcurrency" class="input-field" value="5" min="1" max="20">
+            </div>
+          </div>
+
+          <!-- Scan Progress Bar & Metrics -->
+          <div id="scanProgressBox" class="progress-container mt-25">
+            <div class="flex-between text-sm mb-5">
+              <span id="scanProgressStatus" class="font-bold text-indigo">Status: Idle</span>
+              <span id="scanProgressTime" class="text-muted">Durasi: 0s</span>
+            </div>
+
+            <div class="progress-bar-bg">
+              <div id="scanProgressBar" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+
+            <!-- Mini Live Stat Grid -->
+            <div class="mini-stat-grid mt-15">
+              <div class="mini-stat">
+                <span class="mini-label">Discan</span>
+                <span id="liveScanned" class="mini-val">0</span>
+              </div>
+              <div class="mini-stat">
+                <span class="mini-label">Folder</span>
+                <span id="liveFolders" class="mini-val">0</span>
+              </div>
+              <div class="mini-stat">
+                <span class="mini-label">Terdeteksi</span>
+                <span id="liveDetected" class="mini-val text-indigo">0</span>
+              </div>
+              <div class="mini-stat">
+                <span class="mini-label">Tersimpan</span>
+                <span id="liveSaved" class="mini-val text-emerald">0</span>
+              </div>
+              <div class="mini-stat">
+                <span class="mini-label">Dilewati</span>
+                <span id="liveSkipped" class="mini-val text-muted">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Terminal Logs Viewer Card -->
+        <div class="glass-card p-24 mt-20">
+          <div class="flex-between align-center mb-10">
+            <h3 class="flex-center flex-gap-10">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              <span>Live Console Log</span>
+            </h3>
+            <button id="btnClearLogs" class="btn btn-ghost btn-sm">Bersihkan Console</button>
+          </div>
+
+          <div id="terminalConsole" class="terminal-box">
+            <div class="terminal-line text-muted">[system] Ready. Log scan akan muncul secara real-time di sini...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: SETTINGS -->
+      <div id="tab-settings" class="tab-content">
+        <div class="glass-card p-24 max-w-700">
+          <h3>Pengaturan Environment & Server</h3>
+          <p class="text-muted text-sm mt-5">Ubah pengaturan variabel lingkungan (<code>.env</code>) secara langsung.</p>
+
+          <form id="settingsForm" class="mt-20">
+            <div class="input-group">
+              <label for="cfgFolderId">Google Drive Folder ID</label>
+              <input type="text" id="cfgFolderId" class="input-field" placeholder="Contoh: 1a2b3c4d5e6f7g8h9i">
+            </div>
+
+            <div class="input-group mt-15">
+              <label for="cfgTmdbKey">TMDB API Key</label>
+              <input type="password" id="cfgTmdbKey" class="input-field" placeholder="Key v3 TMDB">
+            </div>
+
+            <div class="input-group mt-15">
+              <label for="cfgMongoUri">MongoDB URI</label>
+              <input type="text" id="cfgMongoUri" class="input-field" placeholder="mongodb://localhost:27017/drive_movies">
+            </div>
+
+            <div class="input-group mt-15">
+              <label for="cfgPlayerUrl">Player Base URL</label>
+              <input type="text" id="cfgPlayerUrl" class="input-field" placeholder="https://domain-player-anda.com">
+            </div>
+
+            <div class="input-group mt-15">
+              <label for="cfgAdminPass">Password Admin Baru</label>
+              <input type="password" id="cfgAdminPass" class="input-field" placeholder="Biarkan kosong jika tidak ingin mengubah">
+            </div>
+
+            <div class="input-group mt-15">
+              <label for="cfgConcurrency">Concurrency Limit</label>
+              <input type="number" id="cfgConcurrency" class="input-field" value="5" min="1" max="20">
+            </div>
+
+            <button type="submit" id="btnSaveConfig" class="btn btn-primary btn-block mt-20">Simpan Perubahan Settings</button>
+            <div id="configAlert" class="alert mt-15 hidden"></div>
+          </form>
+        </div>
+      </div>
+
+      <!-- TAB 5: CATALOG CRUD -->
+      <div id="tab-catalog" class="tab-content">
+        <div class="glass-card p-24">
+          <div class="flex-between align-center flex-wrap gap-10">
+            <div>
+              <h3>Kelola Katalog Media (CRUD)</h3>
+              <p class="text-muted text-sm">Tambah, edit, cari, dan hapus media secara manual.</p>
+            </div>
+            <button id="btnOpenAddModal" class="btn btn-emerald">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>+ Tambah Media Baru</span>
+            </button>
+          </div>
+
+          <!-- Catalog Type Selector & Search Bar -->
+          <div class="flex-between align-center mt-20 flex-wrap gap-15">
+            <div class="pill-group">
+              <button class="pill-btn active" data-catalog-type="movie">Film (Movies)</button>
+              <button class="pill-btn" data-catalog-type="series">Serial (Series)</button>
+              <button class="pill-btn" data-catalog-type="episode">Episodes</button>
+            </div>
+
+            <div class="search-box">
+              <input type="text" id="catalogSearchInput" class="input-field input-sm" placeholder="Cari judul / file ID...">
+              <button id="btnSearchCatalog" class="btn btn-secondary btn-sm">Cari</button>
+            </div>
+          </div>
+
+          <!-- Data Table -->
+          <div class="table-responsive mt-20">
+            <table class="data-table">
+              <thead>
+                <tr id="catalogTableHead">
+                  <th>Poster</th>
+                  <th>Judul</th>
+                  <th>Tahun</th>
+                  <th>Genre</th>
+                  <th>Resolusi</th>
+                  <th>Drive File ID</th>
+                  <th class="text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="catalogTableBody">
+                <tr>
+                  <td colspan="7" class="text-center text-muted py-20">Memuat data katalog...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination -->
+          <div class="flex-between align-center mt-20">
+            <span id="catalogPaginationInfo" class="text-sm text-muted">Halaman 1 dari 1 (Total: 0)</span>
+            <div class="pagination-buttons">
+              <button id="btnPrevPage" class="btn btn-secondary btn-sm" disabled>← Sebelumnya</button>
+              <button id="btnNextPage" class="btn btn-secondary btn-sm" disabled>Selanjutnya →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- CRUD Modal Dialog -->
+  <div id="catalogModal" class="modal-overlay hidden">
+    <div class="glass-card modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Tambah Media Baru</h3>
+        <button id="btnCloseModal" class="btn-close">&times;</button>
+      </div>
+
+      <form id="catalogForm" class="modal-body">
+        <input type="hidden" id="crudItemType" value="movie">
+        <input type="hidden" id="crudItemId" value="">
+
+        <!-- TMDB Auto-Fetch Helper -->
+        <div class="tmdb-fetch-box mb-15">
+          <div class="flex-between align-center mb-5">
+            <span class="text-xs text-indigo font-bold">⚡ AUTO-FETCH METADATA TMDB</span>
+            <span id="tmdbFetchStatus" class="text-xs text-muted"></span>
+          </div>
+          <div class="copy-url-group">
+            <input type="text" id="tmdbFetchInput" class="input-field input-sm" placeholder="Masukkan TMDB ID (cth: 872585) atau Judul Film...">
+            <button type="button" id="btnFetchTmdb" class="btn btn-emerald btn-sm" style="white-space: nowrap;">
+              <span>Ambil Data TMDB</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="crudTitle">Judul <span class="text-danger">*</span></label>
+          <input type="text" id="crudTitle" class="input-field" required placeholder="Contoh: Oppenheimer">
+        </div>
+
+        <div class="grid-2 gap-15 mt-15">
+          <div class="input-group">
+            <label for="crudYear">Tahun</label>
+            <input type="number" id="crudYear" class="input-field" placeholder="2023">
+          </div>
+          <div class="input-group">
+            <label for="crudRating">Rating TMDB (0-10)</label>
+            <input type="number" step="0.1" id="crudRating" class="input-field" placeholder="8.5">
+          </div>
+        </div>
+
+        <div class="grid-2 gap-15 mt-15">
+          <div class="input-group">
+            <label for="crudDriveFileId">Drive File ID <span id="driveIdReq" class="text-danger">*</span></label>
+            <input type="text" id="crudDriveFileId" class="input-field" placeholder="1Zugs6CaleO_8CnXf6f9...">
+          </div>
+          <div class="input-group">
+            <label for="crudResolution">Resolusi</label>
+            <select id="crudResolution" class="input-field">
+              <option value="">(Kosong / Standard)</option>
+              <option value="720p">720p</option>
+              <option value="1080p">1080p</option>
+              <option value="2160p">2160p (4K)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="episodeSpecificFields" class="grid-2 gap-15 mt-15 hidden">
+          <div class="input-group">
+            <label for="crudSeason">Season #</label>
+            <input type="number" id="crudSeason" class="input-field" value="1">
+          </div>
+          <div class="input-group">
+            <label for="crudEpisode">Episode #</label>
+            <input type="number" id="crudEpisode" class="input-field" value="1">
+          </div>
+        </div>
+
+        <div class="input-group mt-15">
+          <label for="crudGenres">Genres (Pisahkan dengan koma)</label>
+          <input type="text" id="crudGenres" class="input-field" placeholder="Action, Sci-Fi, Drama">
+        </div>
+
+        <div class="input-group mt-15">
+          <label for="crudOverview">Ringkasan / Overview</label>
+          <textarea id="crudOverview" rows="3" class="input-field" placeholder="Deskripsi sinopsis..."></textarea>
+        </div>
+
+        <div class="grid-2 gap-15 mt-15">
+          <div class="input-group">
+            <label for="crudPoster">Poster Image URL</label>
+            <input type="url" id="crudPoster" class="input-field" placeholder="https://image.tmdb.org/...">
+          </div>
+          <div class="input-group">
+            <label for="crudBackdrop">Backdrop Image URL</label>
+            <input type="url" id="crudBackdrop" class="input-field" placeholder="https://image.tmdb.org/...">
+          </div>
+        </div>
+
+        <div class="grid-2 gap-15 mt-15">
+          <div class="input-group">
+            <label for="crudTmdbId">TMDB ID</label>
+            <input type="number" id="crudTmdbId" class="input-field" placeholder="872585">
+          </div>
+          <div class="input-group">
+            <label for="crudImdbId">IMDb ID</label>
+            <input type="text" id="crudImdbId" class="input-field" placeholder="tt15398776">
+          </div>
+        </div>
+
+        <div id="crudAlert" class="alert mt-15 hidden"></div>
+
+        <div class="modal-footer mt-20">
+          <button type="button" id="btnCancelModal" class="btn btn-secondary">Batal</button>
+          <button type="submit" id="btnSaveCrud" class="btn btn-primary">Simpan Data</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
