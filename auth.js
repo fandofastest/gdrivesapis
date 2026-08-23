@@ -10,12 +10,24 @@ function envOrDefault(name, defaultValue) {
   return v && String(v).trim() ? v : defaultValue;
 }
 
+function isWindowsPath(p) {
+  return typeof p === 'string' && /^[a-zA-Z]:[\\/]/.test(p);
+}
+
 export function getCredentialsPath() {
-  return envOrDefault('GOOGLE_OAUTH_CREDENTIALS', path.resolve('credentials.json'));
+  const v = process.env.GOOGLE_OAUTH_CREDENTIALS;
+  if (v && String(v).trim() && (!isWindowsPath(v) || process.platform === 'win32')) {
+    return v.trim();
+  }
+  return path.resolve('credentials.json');
 }
 
 export function getTokenPath() {
-  return envOrDefault('GOOGLE_OAUTH_TOKEN_PATH', path.resolve('token.json'));
+  const v = process.env.GOOGLE_OAUTH_TOKEN_PATH;
+  if (v && String(v).trim() && (!isWindowsPath(v) || process.platform === 'win32')) {
+    return v.trim();
+  }
+  return path.resolve('token.json');
 }
 
 async function getDbCredentials() {
