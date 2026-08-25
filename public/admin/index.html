@@ -128,13 +128,50 @@
             </div>
           </div>
 
-          <div class="glass-card stat-card border-pink">
+          <div class="glass-card stat-card border-pink" id="cardHitsStat">
             <div class="stat-icon pink">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </div>
             <div class="stat-info">
-              <span class="stat-label">Total Pemutaran (Plays)</span>
-              <h3 id="statPlays" class="stat-value">0</h3>
+              <div class="stat-label-flex">
+                <span class="stat-label">Total Hits Play</span>
+                <span id="statLiveBadge" class="live-pill"><span class="live-dot-pulse"></span> LIVE</span>
+              </div>
+              <h3 id="statTotalHits" class="stat-value">0</h3>
+              <span class="stat-subtext" id="statPlaysSubtext">0 media unik diputar</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-time Play Hits & Leaderboard Section -->
+        <div class="grid-2 gap-20 mt-20">
+          <!-- Real-time Hits Activity Stream Card -->
+          <div class="glass-card p-24">
+            <div class="card-header">
+              <div class="header-with-badge">
+                <h3>Aktivitas Play Hits Realtime</h3>
+                <span id="sseStatusBadge" class="badge badge-success badge-pulse">
+                  <span class="live-dot"></span> SSE Streaming
+                </span>
+              </div>
+              <span class="text-muted text-sm" id="realtimeHitCountText">0 hits tercatat</span>
+            </div>
+            <div class="live-feed-container mt-15" id="realtimeHitsLog">
+              <div class="text-center text-muted py-20">Menunggu aktivitas pemutaran media...</div>
+            </div>
+          </div>
+
+          <!-- Top Played Media Leaderboard Card -->
+          <div class="glass-card p-24">
+            <div class="card-header">
+              <h3>Top Media Paling Banyak Diputar</h3>
+              <div class="btn-group-sm" id="leaderboardTabToggle">
+                <button class="btn btn-xs btn-primary" id="btnTopMovies" onclick="toggleLeaderboard('movies')">Film</button>
+                <button class="btn btn-xs btn-secondary" id="btnTopEpisodes" onclick="toggleLeaderboard('episodes')">Episode</button>
+              </div>
+            </div>
+            <div class="leaderboard-list mt-15" id="leaderboardContainer">
+              <div class="text-center text-muted py-20">Memuat data leaderboard...</div>
             </div>
           </div>
         </div>

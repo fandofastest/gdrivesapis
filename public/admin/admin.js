@@ -52,6 +52,8 @@ function showDashboard() {
   document.getElementById('loginSection').classList.add('hidden');
   document.getElementById('dashboardSection').classList.remove('hidden');
   refreshDashboard();
+  loadPlayStats();
+  initRealtimePlayStream();
   startStatusPolling();
 }
 
@@ -59,6 +61,10 @@ function handleLogout() {
   adminToken = '';
   localStorage.removeItem('admin_token');
   stopStatusPolling();
+  if (playEventSource) {
+    playEventSource.close();
+    playEventSource = null;
+  }
   fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
   showLogin();
 }
@@ -480,7 +486,15 @@ async function refreshDashboard() {
     document.getElementById('statMovies').textContent = Number(data.counts?.movies || 0).toLocaleString();
     document.getElementById('statSeries').textContent = Number(data.counts?.series || 0).toLocaleString();
     document.getElementById('statEpisodes').textContent = Number(data.counts?.episodes || 0).toLocaleString();
-    document.getElementById('statPlays').textContent = Number(data.counts?.plays || 0).toLocaleString();
+    
+    const totalHitsEl = document.getElementById('statTotalHits');
+    const playsSubtextEl = document.getElementById('statPlaysSubtext');
+    if (totalHitsEl) {
+      totalHitsEl.textContent = Number(data.counts?.totalPlayHits || data.counts?.plays || 0).toLocaleString();
+    }
+    if (playsSubtextEl) {
+      playsSubtextEl.textContent = `${Number(data.counts?.plays || 0).toLocaleString()} media unik diputar`;
+    }
 
     // Auth status
     const auth = data.auth || {};
@@ -827,3 +841,203 @@ function stopStatusPolling() {
 
 // Initial session check on page load
 checkSession();
+
+// -------------------------------------------------------------
+// Real-time Play Hits & SSE Stream Handler
+// -------------------------------------------------------------
+let playEventSource = null;
+let realtimePlayStats = {
+  totalHits: 0,
+  uniqueCount: 0,
+  topMovies: [],
+  topEpisodes: [],
+  recentLogs: [],
+};
+let activeLeaderboardTab = 'movies';
+
+function initRealtimePlayStream() {
+  if (playEventSource) {
+    playEventSource.close();
+    playEventSource = null;
+  }
+
+  if (!adminToken) return;
+
+  const badge = document.getElementById('sseStatusBadge');
+  if (badge) {
+    badge.className = 'badge badge-success badge-pulse';
+    badge.innerHTML = '<span class="live-dot"></span> SSE Streaming';
+  }
+
+  const sseUrl = `/api/admin/plays/stream?token=${encodeURIComponent(adminToken)}`;
+  playEventSource = new EventSource(sseUrl);
+
+  playEventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'connected') {
+        if (Array.isArray(data.recentLogs) && data.recentLogs.length > 0) {
+          realtimePlayStats.recentLogs = data.recentLogs;
+          renderRealtimeLogFeed(realtimePlayStats.recentLogs);
+        }
+      } else if (data.type === 'play') {
+        handleIncomingPlayEvent(data);
+      }
+    } catch (e) {
+      console.error('Error parsing SSE event:', e);
+    }
+  };
+
+  playEventSource.onerror = () => {
+    if (badge) {
+      badge.className = 'badge badge-warning';
+      badge.innerHTML = 'Reconnecting...';
+    }
+  };
+}
+
+function handleIncomingPlayEvent(play) {
+  // Bump Total Hits Counter
+  realtimePlayStats.totalHits = (realtimePlayStats.totalHits || 0) + 1;
+  const hitsEl = document.getElementById('statTotalHits');
+  if (hitsEl) {
+    hitsEl.textContent = Number(realtimePlayStats.totalHits).toLocaleString();
+    hitsEl.classList.remove('hit-bump');
+    void hitsEl.offsetWidth; // trigger reflow
+    hitsEl.classList.add('hit-bump');
+  }
+
+  // Prepend to logs
+  if (!realtimePlayStats.recentLogs) realtimePlayStats.recentLogs = [];
+  realtimePlayStats.recentLogs.unshift(play);
+  if (realtimePlayStats.recentLogs.length > 30) {
+    realtimePlayStats.recentLogs.pop();
+  }
+
+  renderRealtimeLogFeed(realtimePlayStats.recentLogs, play.id);
+
+  // Refresh leaderboard stats in background after a new hit
+  setTimeout(loadPlayStats, 1000);
+}
+
+async function loadPlayStats() {
+  try {
+    const data = await apiFetch('/plays/stats');
+    if (data.ok) {
+      realtimePlayStats.totalHits = data.totalHits || 0;
+      realtimePlayStats.uniqueCount = data.uniqueCount || 0;
+      realtimePlayStats.topMovies = data.topMovies || [];
+      realtimePlayStats.topEpisodes = data.topEpisodes || [];
+      if (Array.isArray(data.recentLogs)) {
+        realtimePlayStats.recentLogs = data.recentLogs;
+      }
+
+      const totalHitsEl = document.getElementById('statTotalHits');
+      const playsSubtextEl = document.getElementById('statPlaysSubtext');
+      if (totalHitsEl) totalHitsEl.textContent = Number(data.totalHits || 0).toLocaleString();
+      if (playsSubtextEl) playsSubtextEl.textContent = `${Number(data.uniqueCount || 0).toLocaleString()} media unik diputar`;
+
+      renderRealtimeLogFeed(realtimePlayStats.recentLogs);
+      renderLeaderboard(activeLeaderboardTab);
+    }
+  } catch (err) {
+    console.error('Failed to load play stats:', err);
+  }
+}
+
+function renderRealtimeLogFeed(logs, highlightId = null) {
+  const container = document.getElementById('realtimeHitsLog');
+  const countText = document.getElementById('realtimeHitCountText');
+  if (!container) return;
+
+  if (countText) {
+    countText.textContent = `${logs.length} hits terbaru`;
+  }
+
+  if (!logs || logs.length === 0) {
+    container.innerHTML = '<div class="text-center text-muted py-20">Belum ada aktivitas pemutaran media.</div>';
+    return;
+  }
+
+  container.innerHTML = logs
+    .slice(0, 15)
+    .map((log) => {
+      const isNew = log.id === highlightId;
+      const typeClass = log.mediaType === 'movie' ? 'type-movie' : (log.mediaType === 'episode' ? 'type-episode' : 'type-unknown');
+      const typeLabel = log.mediaType === 'movie' ? 'Film' : (log.mediaType === 'episode' ? 'Episode' : 'Media');
+
+      const dt = new Date(log.timestamp);
+      const timeStr = isNaN(dt.getTime()) ? '' : dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      return `
+        <div class="feed-item ${isNew ? 'new-hit' : ''}">
+          <div class="feed-item-left">
+            <span class="feed-media-type ${typeClass}">${typeLabel}</span>
+            <span class="feed-title" title="${escapeHtml(log.title)}">${escapeHtml(log.title)}</span>
+          </div>
+          <div class="feed-item-right">
+            <span class="feed-time">${timeStr}</span>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function toggleLeaderboard(type) {
+  activeLeaderboardTab = type;
+  const btnMovies = document.getElementById('btnTopMovies');
+  const btnEpisodes = document.getElementById('btnTopEpisodes');
+
+  if (btnMovies && btnEpisodes) {
+    if (type === 'movies') {
+      btnMovies.className = 'btn btn-xs btn-primary';
+      btnEpisodes.className = 'btn btn-xs btn-secondary';
+    } else {
+      btnMovies.className = 'btn btn-xs btn-secondary';
+      btnEpisodes.className = 'btn btn-xs btn-primary';
+    }
+  }
+
+  renderLeaderboard(type);
+}
+
+function renderLeaderboard(type) {
+  const container = document.getElementById('leaderboardContainer');
+  if (!container) return;
+
+  const items = type === 'movies' ? (realtimePlayStats.topMovies || []) : (realtimePlayStats.topEpisodes || []);
+
+  if (!items || items.length === 0) {
+    container.innerHTML = `<div class="text-center text-muted py-20">Belum ada data statistik ${type === 'movies' ? 'film' : 'episode'}.</div>`;
+    return;
+  }
+
+  const maxPlay = Math.max(...items.map((i) => i.playCount || 1));
+
+  container.innerHTML = items
+    .map((item, idx) => {
+      const rank = idx + 1;
+      const rankClass = rank === 1 ? 'rank-1' : (rank === 2 ? 'rank-2' : (rank === 3 ? 'rank-3' : 'rank-other'));
+      const count = item.playCount || 0;
+      const pct = maxPlay > 0 ? Math.round((count / maxPlay) * 100) : 0;
+      const displayTitle = item.title || 'Untitled';
+
+      return `
+        <div class="leaderboard-item">
+          <div class="rank-badge ${rankClass}">${rank}</div>
+          <div class="leaderboard-info">
+            <div class="leaderboard-title-row">
+              <span class="leaderboard-title" title="${escapeHtml(displayTitle)}">${escapeHtml(displayTitle)}</span>
+              <span class="leaderboard-count">${count.toLocaleString()} hits</span>
+            </div>
+            <div class="leaderboard-bar-bg">
+              <div class="leaderboard-bar-fill" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    })
+    .join('');
+}
+

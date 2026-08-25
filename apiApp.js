@@ -4,6 +4,7 @@ import path from 'node:path';
 import { ObjectId } from 'mongodb';
 import { connectMongo } from './db.js';
 import { createAdminRouter } from './adminRoutes.js';
+import { playEvents } from './playEvents.js';
 
 function parseIntParam(v, def) {
   const n = Number.parseInt(String(v ?? ''), 10);
@@ -490,21 +491,48 @@ async function buildApp() {
 
       const now = new Date();
 
-      await plays.updateOne(
+      const playRes = await plays.findOneAndUpdate(
         { driveFileId },
         {
           $inc: { playCount: 1 },
           $set: { lastPlayedAt: now },
           $setOnInsert: { createdAt: now },
         },
-        { upsert: true },
+        { upsert: true, returnDocument: 'after' },
       );
 
       const contentUpdate = { $inc: { playCount: 1 }, $set: { lastPlayedAt: now } };
-      await movies
-        .updateOne({ $or: [{ driveFileId }, { 'files.driveFileId': driveFileId }] }, contentUpdate)
-        .catch(() => { });
-      await episodes.updateOne({ driveFileId }, contentUpdate).catch(() => { });
+      const matchedMovie = await movies
+        .findOneAndUpdate({ $or: [{ driveFileId }, { 'files.driveFileId': driveFileId }] }, contentUpdate, { returnDocument: 'after' })
+        .catch(() => null);
+      const matchedEpisode = !matchedMovie
+        ? await episodes.findOneAndUpdate({ driveFileId }, contentUpdate, { returnDocument: 'after' }).catch(() => null)
+        : null;
+
+      let title = driveFileId;
+      let mediaType = 'unknown';
+      let resolution = null;
+
+      if (matchedMovie?.value || matchedMovie?.title) {
+        const m = matchedMovie.value || matchedMovie;
+        title = m.title || driveFileId;
+        mediaType = 'movie';
+        resolution = m.resolution || null;
+      } else if (matchedEpisode?.value || matchedEpisode?.title) {
+        const ep = matchedEpisode.value || matchedEpisode;
+        title = ep.title || ep.episodeTitle || ep.fileName || driveFileId;
+        mediaType = 'episode';
+        resolution = ep.resolution || null;
+      }
+
+      const currentCount = playRes?.value?.playCount || playRes?.playCount || 1;
+      playEvents.emitPlay({
+        mediaType,
+        title,
+        driveFileId,
+        resolution,
+        playCount: currentCount,
+      });
 
       res.status(307);
       res.setHeader('Location', url);
@@ -531,18 +559,28 @@ async function buildApp() {
 
       const now = new Date();
 
-      await plays.updateOne(
+      const playRes = await plays.findOneAndUpdate(
         { movieId },
         {
           $inc: { playCount: 1 },
           $set: { lastPlayedAt: now, driveFileId: chosenDriveFileId },
           $setOnInsert: { createdAt: now },
         },
-        { upsert: true },
+        { upsert: true, returnDocument: 'after' },
       );
 
       const contentUpdate = { $inc: { playCount: 1 }, $set: { lastPlayedAt: now } };
       await movies.updateOne({ _id: oid }, contentUpdate).catch(() => { });
+
+      const currentCount = playRes?.value?.playCount || playRes?.playCount || (movie.playCount || 0) + 1;
+      playEvents.emitPlay({
+        mediaType: 'movie',
+        title: movie.title,
+        movieId,
+        driveFileId: chosenDriveFileId,
+        resolution: req.query.resolution || movie.resolution || null,
+        playCount: currentCount,
+      });
 
       res.status(307);
       res.setHeader('Location', url);

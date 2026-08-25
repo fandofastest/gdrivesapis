@@ -11,6 +11,7 @@ import {
 import { scanManager } from './scanManager.js';
 import { connectMongo } from './db.js';
 import { getCacheConfig } from './cacheManager.js';
+import { playEvents } from './playEvents.js';
 
 function getAdminPassword() {
   const v = process.env.ADMIN_PASSWORD;
@@ -42,8 +43,9 @@ export function createAdminRouter() {
       ?.split(';')
       .find((c) => c.trim().startsWith('admin_token='))
       ?.split('=')[1];
+    const queryToken = req.query?.token;
 
-    let token = tokenHeader || cookieToken;
+    let token = tokenHeader || cookieToken || queryToken;
     if (!token && authHeader && authHeader.startsWith('Bearer ')) {
       token = authHeader.substring(7);
     }
@@ -101,18 +103,20 @@ export function createAdminRouter() {
       const scanStatus = scanManager.getStatus();
 
       let mongoStatus = { connected: false, error: null };
-      let counts = { movies: 0, series: 0, episodes: 0, plays: 0 };
+      let counts = { movies: 0, series: 0, episodes: 0, plays: 0, totalPlayHits: 0 };
 
       try {
         const { movies, series, episodes, db } = await connectMongo();
         mongoStatus.connected = true;
-        const [mCount, sCount, eCount, pCount] = await Promise.all([
+        const [mCount, sCount, eCount, pCount, playSum] = await Promise.all([
           movies.countDocuments().catch(() => 0),
           series.countDocuments().catch(() => 0),
           episodes.countDocuments().catch(() => 0),
           db.collection('plays').countDocuments().catch(() => 0),
+          db.collection('plays').aggregate([{ $group: { _id: null, total: { $sum: '$playCount' } } }]).toArray().catch(() => []),
         ]);
-        counts = { movies: mCount, series: sCount, episodes: eCount, plays: pCount };
+        const totalPlayHits = playSum[0]?.total || 0;
+        counts = { movies: mCount, series: sCount, episodes: eCount, plays: pCount, totalPlayHits };
       } catch (err) {
         mongoStatus.error = err?.message || String(err);
       }
@@ -159,6 +163,76 @@ export function createAdminRouter() {
     } catch (e) {
       res.status(500).json({ error: e?.message || String(e) });
     }
+  });
+
+  // Real-time Play Statistics API
+  router.get('/plays/stats', requireAdmin, async (req, res) => {
+    try {
+      const { movies, episodes, db } = await connectMongo();
+      const plays = db.collection('plays');
+
+      const [uniqueCount, playSum, topMovies, topEpisodes] = await Promise.all([
+        plays.countDocuments().catch(() => 0),
+        plays.aggregate([{ $group: { _id: null, total: { $sum: '$playCount' } } }]).toArray().catch(() => []),
+        movies.find({ playCount: { $gt: 0 } }).sort({ playCount: -1 }).limit(5).toArray().catch(() => []),
+        episodes.find({ playCount: { $gt: 0 } }).sort({ playCount: -1 }).limit(5).toArray().catch(() => []),
+      ]);
+
+      const totalHits = playSum[0]?.total || 0;
+      const recentLogs = playEvents.getRecentLogs();
+
+      res.json({
+        ok: true,
+        totalHits,
+        uniqueCount,
+        topMovies: topMovies.map((m) => ({
+          id: String(m._id),
+          title: m.title,
+          playCount: m.playCount || 0,
+          poster: m.poster || null,
+          year: m.year || null,
+        })),
+        topEpisodes: topEpisodes.map((e) => ({
+          id: String(e._id),
+          title: e.title || e.episodeTitle || e.fileName,
+          playCount: e.playCount || 0,
+          season: e.season,
+          episode: e.episode,
+        })),
+        recentLogs,
+      });
+    } catch (e) {
+      res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+
+  // Real-time Server-Sent Events (SSE) Stream for Play Hits
+  router.get('/plays/stream', requireAdmin, (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    if (res.flushHeaders) res.flushHeaders();
+
+    const initData = {
+      type: 'connected',
+      recentLogs: playEvents.getRecentLogs(),
+    };
+    res.write(`data: ${JSON.stringify(initData)}\n\n`);
+
+    const onPlay = (data) => {
+      res.write(`data: ${JSON.stringify({ type: 'play', ...data })}\n\n`);
+    };
+
+    playEvents.on('play', onPlay);
+
+    const heartbeat = setInterval(() => {
+      res.write(': heartbeat\n\n');
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      playEvents.off('play', onPlay);
+    });
   });
 
   // Credentials & OAuth
