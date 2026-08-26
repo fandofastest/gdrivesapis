@@ -103,20 +103,28 @@ export function createAdminRouter() {
       const scanStatus = scanManager.getStatus();
 
       let mongoStatus = { connected: false, error: null };
-      let counts = { movies: 0, series: 0, episodes: 0, plays: 0, totalPlayHits: 0 };
+      let counts = { movies: 0, series: 0, episodes: 0, plays: 0, totalPlayHits: 0, todayHits: 0, monthHits: 0 };
 
       try {
         const { movies, series, episodes, db } = await connectMongo();
         mongoStatus.connected = true;
-        const [mCount, sCount, eCount, pCount, playSum] = await Promise.all([
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const playLogs = db.collection('play_logs');
+
+        const [mCount, sCount, eCount, pCount, playSum, tHits, mHits] = await Promise.all([
           movies.countDocuments().catch(() => 0),
           series.countDocuments().catch(() => 0),
           episodes.countDocuments().catch(() => 0),
           db.collection('plays').countDocuments().catch(() => 0),
           db.collection('plays').aggregate([{ $group: { _id: null, total: { $sum: '$playCount' } } }]).toArray().catch(() => []),
+          playLogs.countDocuments({ timestamp: { $gte: startOfToday } }).catch(() => 0),
+          playLogs.countDocuments({ timestamp: { $gte: startOfMonth } }).catch(() => 0),
         ]);
         const totalPlayHits = playSum[0]?.total || 0;
-        counts = { movies: mCount, series: sCount, episodes: eCount, plays: pCount, totalPlayHits };
+        counts = { movies: mCount, series: sCount, episodes: eCount, plays: pCount, totalPlayHits, todayHits: tHits, monthHits: mHits };
       } catch (err) {
         mongoStatus.error = err?.message || String(err);
       }
@@ -170,10 +178,19 @@ export function createAdminRouter() {
     try {
       const { movies, episodes, db } = await connectMongo();
       const plays = db.collection('plays');
+      const playLogs = db.collection('play_logs');
 
-      const [uniqueCount, playSum, topMovies, topEpisodes] = await Promise.all([
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const [uniqueCount, playSum, todayHits, monthHits, latestLog, latestPlay, topMovies, topEpisodes] = await Promise.all([
         plays.countDocuments().catch(() => 0),
         plays.aggregate([{ $group: { _id: null, total: { $sum: '$playCount' } } }]).toArray().catch(() => []),
+        playLogs.countDocuments({ timestamp: { $gte: startOfToday } }).catch(() => 0),
+        playLogs.countDocuments({ timestamp: { $gte: startOfMonth } }).catch(() => 0),
+        playLogs.findOne({}, { sort: { timestamp: -1 } }).catch(() => null),
+        plays.findOne({}, { sort: { lastPlayedAt: -1 } }).catch(() => null),
         movies.find({ playCount: { $gt: 0 } }).sort({ playCount: -1 }).limit(5).toArray().catch(() => []),
         episodes.find({ playCount: { $gt: 0 } }).sort({ playCount: -1 }).limit(5).toArray().catch(() => []),
       ]);
@@ -181,10 +198,34 @@ export function createAdminRouter() {
       const totalHits = playSum[0]?.total || 0;
       const recentLogs = playEvents.getRecentLogs();
 
+      let lastPlay = null;
+      if (latestLog?.title) {
+        lastPlay = {
+          title: latestLog.title,
+          mediaType: latestLog.mediaType || 'unknown',
+          timestamp: latestLog.timestamp,
+        };
+      } else if (recentLogs.length > 0 && recentLogs[0]?.title) {
+        lastPlay = {
+          title: recentLogs[0].title,
+          mediaType: recentLogs[0].mediaType || 'unknown',
+          timestamp: recentLogs[0].timestamp,
+        };
+      } else if (latestPlay?.lastPlayedAt) {
+        lastPlay = {
+          title: latestPlay.driveFileId || latestPlay.movieId || 'Media',
+          mediaType: latestPlay.movieId ? 'movie' : 'unknown',
+          timestamp: latestPlay.lastPlayedAt,
+        };
+      }
+
       res.json({
         ok: true,
         totalHits,
+        todayHits,
+        monthHits,
         uniqueCount,
+        lastPlay,
         topMovies: topMovies.map((m) => ({
           id: String(m._id),
           title: m.title,

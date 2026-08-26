@@ -896,16 +896,63 @@ function initRealtimePlayStream() {
   };
 }
 
+function formatRelativeTime(dateInput) {
+  if (!dateInput) return '';
+  const dt = new Date(dateInput);
+  if (isNaN(dt.getTime())) return '';
+
+  const now = new Date();
+  const diffSec = Math.floor((now - dt) / 1000);
+
+  if (diffSec < 10) return 'baru saja';
+  if (diffSec < 60) return `${diffSec}d yang lalu`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m yang lalu`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}j yang lalu`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}h yang lalu`;
+}
+
+function updateHitsUI(stats) {
+  const totalHitsEl = document.getElementById('statTotalHits');
+  const todayPillEl = document.getElementById('pillTodayHits');
+  const monthPillEl = document.getElementById('pillMonthHits');
+  const lastPlayEl = document.getElementById('lastPlayTitle');
+
+  if (totalHitsEl) totalHitsEl.textContent = Number(stats.totalHits || 0).toLocaleString();
+  if (todayPillEl) todayPillEl.textContent = `Hari ini: ${Number(stats.todayHits || 0).toLocaleString()}`;
+  if (monthPillEl) monthPillEl.textContent = `Bulan ini: ${Number(stats.monthHits || 0).toLocaleString()}`;
+
+  if (lastPlayEl) {
+    if (stats.lastPlay && stats.lastPlay.title) {
+      const rel = formatRelativeTime(stats.lastPlay.timestamp);
+      lastPlayEl.textContent = `${stats.lastPlay.title}${rel ? ' • ' + rel : ''}`;
+    } else {
+      lastPlayEl.textContent = 'Belum ada pemutaran';
+    }
+  }
+}
+
 function handleIncomingPlayEvent(play) {
-  // Bump Total Hits Counter
+  // Bump Total, Today, and Month Hits Counters
   realtimePlayStats.totalHits = (realtimePlayStats.totalHits || 0) + 1;
+  realtimePlayStats.todayHits = (realtimePlayStats.todayHits || 0) + 1;
+  realtimePlayStats.monthHits = (realtimePlayStats.monthHits || 0) + 1;
+  realtimePlayStats.lastPlay = {
+    title: play.title,
+    mediaType: play.mediaType,
+    timestamp: play.timestamp || new Date().toISOString(),
+  };
+
   const hitsEl = document.getElementById('statTotalHits');
   if (hitsEl) {
-    hitsEl.textContent = Number(realtimePlayStats.totalHits).toLocaleString();
     hitsEl.classList.remove('hit-bump');
     void hitsEl.offsetWidth; // trigger reflow
     hitsEl.classList.add('hit-bump');
   }
+
+  updateHitsUI(realtimePlayStats);
 
   // Prepend to logs
   if (!realtimePlayStats.recentLogs) realtimePlayStats.recentLogs = [];
@@ -925,18 +972,17 @@ async function loadPlayStats() {
     const data = await apiFetch('/plays/stats');
     if (data.ok) {
       realtimePlayStats.totalHits = data.totalHits || 0;
+      realtimePlayStats.todayHits = data.todayHits || 0;
+      realtimePlayStats.monthHits = data.monthHits || 0;
       realtimePlayStats.uniqueCount = data.uniqueCount || 0;
+      realtimePlayStats.lastPlay = data.lastPlay || null;
       realtimePlayStats.topMovies = data.topMovies || [];
       realtimePlayStats.topEpisodes = data.topEpisodes || [];
       if (Array.isArray(data.recentLogs)) {
         realtimePlayStats.recentLogs = data.recentLogs;
       }
 
-      const totalHitsEl = document.getElementById('statTotalHits');
-      const playsSubtextEl = document.getElementById('statPlaysSubtext');
-      if (totalHitsEl) totalHitsEl.textContent = Number(data.totalHits || 0).toLocaleString();
-      if (playsSubtextEl) playsSubtextEl.textContent = `${Number(data.uniqueCount || 0).toLocaleString()} media unik diputar`;
-
+      updateHitsUI(realtimePlayStats);
       renderRealtimeLogFeed(realtimePlayStats.recentLogs);
       renderLeaderboard(activeLeaderboardTab);
     }

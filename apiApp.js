@@ -126,6 +126,8 @@ async function buildApp() {
 
   const { db, movies, series, episodes } = await connectMongo();
   const plays = db.collection('plays');
+  const playLogs = db.collection('play_logs');
+  await playLogs.createIndex({ timestamp: -1 }).catch(() => {});
 
   // Plays indexing:
   // - legacy endpoint (/api/play/:driveFileId) upserts by driveFileId
@@ -534,6 +536,16 @@ async function buildApp() {
         playCount: currentCount,
       });
 
+      playLogs
+        .insertOne({
+          driveFileId,
+          title,
+          mediaType,
+          resolution,
+          timestamp: now,
+        })
+        .catch(() => {});
+
       res.status(307);
       res.setHeader('Location', url);
       res.end();
@@ -581,6 +593,17 @@ async function buildApp() {
         resolution: req.query.resolution || movie.resolution || null,
         playCount: currentCount,
       });
+
+      playLogs
+        .insertOne({
+          driveFileId: chosenDriveFileId,
+          movieId,
+          title: movie.title,
+          mediaType: 'movie',
+          resolution: req.query.resolution || movie.resolution || null,
+          timestamp: now,
+        })
+        .catch(() => {});
 
       res.status(307);
       res.setHeader('Location', url);
