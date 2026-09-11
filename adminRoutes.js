@@ -19,13 +19,13 @@ function getAdminPassword() {
 }
 
 function createToken(password) {
-  return Buffer.from(`admin:${password}`).toString('base64');
+  return Buffer.from(`admin:${String(password).trim()}`).toString('base64');
 }
 
 function verifyToken(token) {
   if (!token) return false;
   const expected = createToken(getAdminPassword());
-  return token === expected;
+  return String(token).trim() === expected;
 }
 
 export function createAdminRouter() {
@@ -60,10 +60,11 @@ export function createAdminRouter() {
   // Public Auth Endpoints
   // -------------------------------------------------------------
   router.post('/login', (req, res) => {
-    const { password } = req.body || {};
-    const expected = getAdminPassword();
+    const rawPass = req.body?.password;
+    const password = String(rawPass ?? '').trim();
+    const expected = String(getAdminPassword()).trim();
 
-    if (password === expected) {
+    if (password && password === expected) {
       const token = createToken(expected);
       res.setHeader('Set-Cookie', `admin_token=${token}; Path=/; HttpOnly; SameSite=Lax`);
       return res.json({ success: true, token });
