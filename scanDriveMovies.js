@@ -23,6 +23,62 @@ function requireEnv(name) {
   return v;
 }
 
+export const APPLE_TMDB_IDS = new Set([
+  466420, 753342, 776503, 848538, 1059064, 877817, 1029575, 1363123, 522402, 544401,
+  814340, 595586, 585511, 592983, 667691, 639933, 654754, 1022256, 839828, 1259102,
+  606234, 724495, 441130, 516486, 804095, 615173, 726759, 868759, 842942, 1077280,
+  882569, 930600, 643215, 840430, 1084242, 1147416, 995133, 948549
+]);
+
+export const APPLE_COMPANY_IDS = new Set([142171, 190479, 102434, 2552]);
+
+export const APPLE_TITLES = new Set([
+  "killers of the flower moon", "napoleon", "coda", "greyhound", "finch",
+  "tetris", "ghosted", "the tragedy of macbeth", "wolfwalkers", "palmer",
+  "cherry", "spirited", "emancipation", "sharper", "fly me to the moon",
+  "the instigators", "wolfs", "blitz", "the family plan", "the family plan 2",
+  "flora and son", "cha cha real smooth", "the greatest beer run ever",
+  "causeway", "the beanie bubble", "f1", "swan song", "raymond & ray",
+  "boys state", "the velvet underground", "billie eilish the world's a little blurry",
+  "selena gomez my mind & me", "still a michael j fox movie", "stephen curry underrated",
+  "the elephant whisperers", "the boy the mole the fox and the horse",
+  "luck", "spellbound"
+]);
+
+export function isAppleStudioContent({ title, year, tmdbId, tmdb, overview, fileName }) {
+  if (tmdbId && APPLE_TMDB_IDS.has(Number(tmdbId))) return true;
+  if (tmdb?.tmdbId && APPLE_TMDB_IDS.has(Number(tmdb.tmdbId))) return true;
+
+  if (Array.isArray(tmdb?.productionCompanies)) {
+    for (const c of tmdb.productionCompanies) {
+      if (APPLE_COMPANY_IDS.has(Number(c.id))) return true;
+      if (/apple\s*(studios|original|film|picture|productions)/i.test(c.name || '')) return true;
+    }
+  }
+  if (Array.isArray(tmdb?.networks)) {
+    for (const n of tmdb.networks) {
+      if (APPLE_COMPANY_IDS.has(Number(n.id))) return true;
+      if (/apple\s*(tv\+?|original|studios)/i.test(n.name || '')) return true;
+    }
+  }
+
+  const normTitle = String(title || '').toLowerCase().trim();
+  if (normTitle === 'eternity' && (Number(year) === 2025 || !year)) return true;
+
+  const cleanTitle = normTitle.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  if (APPLE_TITLES.has(cleanTitle)) return true;
+
+  const ov = String(overview || tmdb?.overview || '');
+  if (/apple\s*(tv\+?|studios|original|film|picture)/i.test(ov) || /apple original/i.test(ov)) {
+    return true;
+  }
+
+  const fn = String(fileName || '').toLowerCase();
+  if (/apple\s*(tv\+?|studios|original)/i.test(fn)) return true;
+
+  return false;
+}
+
 export async function enrichMetadata({ mongoUri, tmdbApiKey, onLog, onProgress, signal }) {
   const log = (msg) => {
     console.log(msg);
@@ -67,6 +123,13 @@ export async function enrichMetadata({ mongoUri, tmdbApiKey, onLog, onProgress, 
         limit(async () => {
           const tmdb = await fetchTMDBMetadata({ title: doc.title, year: doc.year, tmdbApiKey });
           if (!tmdb) return;
+
+          if (isAppleStudioContent({ title: tmdb.officialTitle ?? doc.title, year: doc.year, tmdbId: tmdb.tmdbId ?? doc.tmdbId, tmdb, overview: tmdb.overview ?? doc.overview, fileName: doc.fileName })) {
+            log(`[enrich] removing Apple Studio / Apple TV+ movie: ${doc.title}`);
+            await movies.deleteOne({ driveFileId: doc.driveFileId });
+            return;
+          }
+
           await movies.updateOne(
             { driveFileId: doc.driveFileId },
             {
@@ -88,15 +151,15 @@ export async function enrichMetadata({ mongoUri, tmdbApiKey, onLog, onProgress, 
 
       if (movieTasks.length >= 200) {
         await Promise.allSettled(movieTasks.splice(0, movieTasks.length));
-        console.log(`[enrich] movies scanned=${scannedMovies} updated=${updatedMovies}`);
+        log(`[enrich] movies scanned=${scannedMovies} updated=${updatedMovies}`);
       }
     }
     if (movieTasks.length) {
       await Promise.allSettled(movieTasks);
-      console.log(`[enrich] movies scanned=${scannedMovies} updated=${updatedMovies}`);
+      log(`[enrich] movies scanned=${scannedMovies} updated=${updatedMovies}`);
     }
 
-    console.log('[enrich] start series');
+    log('[enrich] start series');
     const seriesCursor = series.find({
       $or: [
         { overview: null },
@@ -138,15 +201,15 @@ export async function enrichMetadata({ mongoUri, tmdbApiKey, onLog, onProgress, 
 
       if (seriesTasks.length >= 200) {
         await Promise.allSettled(seriesTasks.splice(0, seriesTasks.length));
-        console.log(`[enrich] series scanned=${scannedSeries} updated=${updatedSeries}`);
+        log(`[enrich] series scanned=${scannedSeries} updated=${updatedSeries}`);
       }
     }
     if (seriesTasks.length) {
       await Promise.allSettled(seriesTasks);
-      console.log(`[enrich] series scanned=${scannedSeries} updated=${updatedSeries}`);
+      log(`[enrich] series scanned=${scannedSeries} updated=${updatedSeries}`);
     }
 
-    console.log(`[enrich] updated movies=${updatedMovies} series=${updatedSeries}`);
+    log(`[enrich] updated movies=${updatedMovies} series=${updatedSeries}`);
   } finally {
     await client.close();
   }
@@ -184,6 +247,12 @@ async function fetchTMDBSeriesMetadata({ title, year, tmdbApiKey }) {
     voteAverage: typeof details?.vote_average === 'number' ? details.vote_average : null,
     posterUrl: details?.poster_path ? `${TMDB_POSTER_BASE}${details.poster_path}` : null,
     backdropUrl: details?.backdrop_path ? `${TMDB_BACKDROP_BASE}${details.backdrop_path}` : null,
+    networks: Array.isArray(details?.networks)
+      ? details.networks.map((n) => ({ id: n.id, name: n.name }))
+      : [],
+    productionCompanies: Array.isArray(details?.production_companies)
+      ? details.production_companies.map((c) => ({ id: c.id, name: c.name }))
+      : [],
   };
 }
 
@@ -214,20 +283,26 @@ function yearFromDateString(s) {
   return m ? Number(m[1]) : null;
 }
 
-export async function findOrCreateSeries({ seriesCol, tmdbApiKey, seriesCache, title, year, fetchMetadata }) {
+export async function findOrCreateSeries({ seriesCol, tmdbApiKey, seriesCache, title, year, fetchMetadata, log = console.log }) {
   const key = `${title}::${year || ''}`;
   if (seriesCache.has(key)) return seriesCache.get(key);
 
   const tmdb = fetchMetadata ? await fetchTMDBSeriesMetadata({ title, year, tmdbApiKey }) : null;
+  const finalTitle = tmdb?.officialTitle ?? title;
+
+  if (isAppleStudioContent({ title: finalTitle, year, tmdbId: tmdb?.tmdbId, tmdb, overview: tmdb?.overview })) {
+    log(`[skip] Apple Studio / Apple TV+ series ignored: ${finalTitle}`);
+    return null;
+  }
+
   if (fetchMetadata) {
     if (tmdb) {
-      console.log(`[tmdb] series metadata fetched: ${tmdb.officialTitle ?? title} (${tmdb.releaseDate ?? year ?? 'n/a'})`);
+      log(`[tmdb] series metadata fetched: ${tmdb.officialTitle ?? title} (${tmdb.releaseDate ?? year ?? 'n/a'})`);
     } else {
-      console.log(`[tmdb] no series match for: ${title}${year ? ` (${year})` : ''}`);
+      log(`[tmdb] no series match for: ${title}${year ? ` (${year})` : ''}`);
     }
   }
 
-  const finalTitle = tmdb?.officialTitle ?? title;
   const doc = {
     title: finalTitle,
     year: year ?? null,
@@ -255,7 +330,7 @@ export async function findOrCreateSeries({ seriesCol, tmdbApiKey, seriesCache, t
   return stored;
 }
 
-export async function insertEpisode({ episodesCol, seriesId, season, episode, episodeTitle, fileName, driveFileId, driveLink, fileSize, resolution }) {
+export async function insertEpisode({ episodesCol, seriesId, season, episode, episodeTitle, fileName, driveFileId, driveLink, fileSize, resolution, log = console.log }) {
   const doc = {
     seriesId,
     season,
@@ -276,7 +351,7 @@ export async function insertEpisode({ episodesCol, seriesId, season, episode, ep
   );
 
   if (res.upsertedCount === 1) {
-    console.log(
+    log(
       `[db] episode saved: series=${seriesId} S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} [${driveFileId}]`,
     );
   }
@@ -374,7 +449,10 @@ export async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey, onLog
             title: seriesTitle,
             year: seriesYear,
             fetchMetadata: false,
+            log,
           });
+
+          if (!seriesDoc?._id) return;
 
           const inserted = dryRun
             ? true
@@ -389,6 +467,7 @@ export async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey, onLog
                 driveLink: doc.driveLink || buildDriveFileLink(driveFileId),
                 fileSize: typeof doc.fileSize === 'number' ? doc.fileSize : null,
                 resolution: doc.resolution || parseResolutionFromText(fileName),
+                log,
               });
 
           if (!inserted) {
@@ -406,7 +485,7 @@ export async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey, onLog
 
       if (tasks.length >= 500) {
         await Promise.allSettled(tasks.splice(0, tasks.length));
-        console.log(`[migrate] scanned=${scanned} candidates=${candidates} migrated=${migrated} skipped_duplicate=${skippedDuplicate} skipped_not_episode=${skippedNotEpisode}`);
+        log(`[migrate] scanned=${scanned} candidates=${candidates} migrated=${migrated} skipped_duplicate=${skippedDuplicate} skipped_not_episode=${skippedNotEpisode}`);
       }
     }
 
@@ -414,7 +493,7 @@ export async function migrateMisclassifiedEpisodes({ mongoUri, tmdbApiKey, onLog
       await Promise.allSettled(tasks);
     }
 
-    console.log(`[migrate] done scanned=${scanned} candidates=${candidates} migrated=${migrated} skipped_duplicate=${skippedDuplicate} skipped_not_episode=${skippedNotEpisode}`);
+    log(`[migrate] done scanned=${scanned} candidates=${candidates} migrated=${migrated} skipped_duplicate=${skippedDuplicate} skipped_not_episode=${skippedNotEpisode}`);
   } finally {
     await client.close();
   }
@@ -647,6 +726,9 @@ export async function fetchTMDBMetadata({ title, year, tmdbApiKey }) {
     voteAverage: typeof details?.vote_average === 'number' ? details.vote_average : null,
     posterUrl: details?.poster_path ? `${TMDB_POSTER_BASE}${details.poster_path}` : null,
     backdropUrl: details?.backdrop_path ? `${TMDB_BACKDROP_BASE}${details.backdrop_path}` : null,
+    productionCompanies: Array.isArray(details?.production_companies)
+      ? details.production_companies.map((c) => ({ id: c.id, name: c.name }))
+      : [],
   };
 }
 
@@ -965,12 +1047,12 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
               if (!seriesTitle || !episodeInfo) {
                 skipped += 1;
                 skippedParseFailed += 1;
-                if (DEBUG) console.log(`[skip] episode parse failed: ${name}`);
+                if (DEBUG) log(`[skip] episode parse failed: ${name}`);
                 return;
               }
 
               detected += 1;
-              console.log(
+              log(
                 `[detect] series=${seriesTitle} S${String(episodeInfo.season).padStart(2, '0')}E${String(episodeInfo.episode).padStart(2, '0')} -> ${name}`,
               );
 
@@ -982,7 +1064,13 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
                 title: seriesTitle,
                 year: seriesYear,
                 fetchMetadata,
+                log,
               });
+
+              if (!seriesDoc?._id) {
+                skipped += 1;
+                return;
+              }
 
               const epInserted = await insertEpisode({
                 episodesCol: episodes,
@@ -995,6 +1083,7 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
                 driveLink,
                 fileSize,
                 resolution,
+                log,
               });
 
               if (epInserted) {
@@ -1024,7 +1113,7 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
             if (!parsed) {
               skipped += 1;
               skippedParseFailed += 1;
-              if (DEBUG) console.log(`[skip] movie parse failed: ${name}`);
+              if (DEBUG) log(`[skip] movie parse failed: ${name}`);
               return;
             }
 
@@ -1034,7 +1123,7 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
             }
 
             detected += 1;
-            console.log(
+            log(
               `[detect] movie=${parsed.title} (${parsed.year})${parsed.resolution ? ` ${parsed.resolution}` : ''} -> ${name}`,
             );
 
@@ -1048,10 +1137,16 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
               }
 
               if (tmdb) {
-                console.log(`[tmdb] metadata fetched: ${tmdb.officialTitle ?? parsed.title} (${tmdb.releaseDate ?? parsed.year})`);
+                log(`[tmdb] metadata fetched: ${tmdb.officialTitle ?? parsed.title} (${tmdb.releaseDate ?? parsed.year})`);
               } else {
-                console.log(`[tmdb] no match for: ${parsed.title} (${parsed.year})`);
+                log(`[tmdb] no match for: ${parsed.title} (${parsed.year})`);
               }
+            }
+
+            if (isAppleStudioContent({ title: tmdb?.officialTitle ?? parsed.title, year: parsed.year, tmdbId: tmdb?.tmdbId, tmdb, overview: tmdb?.overview, fileName: name })) {
+              skipped += 1;
+              log(`[skip] Apple Studio / Apple TV+ movie ignored: ${parsed.title} (${parsed.year})`);
+              return;
             }
 
             const doc = {
@@ -1080,7 +1175,7 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
 
             if (writeRes.upsertedCount === 1) {
               saved += 1;
-              console.log(`[db] movie saved: ${doc.title} (${doc.year}) [${driveFileId}]`);
+              log(`[db] movie saved: ${doc.title} (${doc.year}) [${driveFileId}]`);
             } else {
               skipped += 1;
               skippedDuplicate += 1;
@@ -1091,14 +1186,14 @@ export async function scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, onP
         await Promise.allSettled(tasks);
 
         if (DEBUG || pagesFetched % 10 === 0) {
-          console.log(
+          log(
             `[progress] scanned=${scanned} folders_scanned=${scannedFolders} folders_discovered=${discoveredFolders} detected=${detected} saved=${saved} skipped=${skipped} (folders=${skippedFolder}, non_video=${skippedNonVideo}, parse_failed=${skippedParseFailed}, duplicate=${skippedDuplicate})`,
           );
         }
       } while (pageToken);
     }
 
-    console.log(
+    log(
       `[done] scanned=${scanned} folders_scanned=${scannedFolders} folders_discovered=${discoveredFolders} detected=${detected} saved=${saved} skipped=${skipped} (non_video=${skippedNonVideo}, parse_failed=${skippedParseFailed}, duplicate=${skippedDuplicate})`,
     );
   } finally {
@@ -1126,7 +1221,7 @@ async function main() {
 
   const driveFolderId = requireEnv('DRIVE_FOLDER_ID');
 
-  await scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri });
+  await scanDriveMovies({ driveFolderId, tmdbApiKey, mongoUri, interactive: true });
 }
 
 // Run only when executed directly (not when imported).
