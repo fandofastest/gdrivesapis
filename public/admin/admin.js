@@ -76,18 +76,20 @@ document.getElementById('loginForm')?.addEventListener('submit', async (e) => {
   errEl.classList.add('hidden');
 
   try {
-    const res = await fetch('/api/admin/login', {
+    const response = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
-    }).then((r) => r.json());
+    });
 
-    if (res.success && res.token) {
+    const res = await response.json().catch(() => ({}));
+
+    if (response.ok && res.success && res.token) {
       adminToken = res.token;
       localStorage.setItem('admin_token', adminToken);
       showDashboard();
     } else {
-      errEl.textContent = res.message || 'Password salah';
+      errEl.textContent = res.message || res.error || (response.ok ? 'Password salah' : `Error ${response.status}: Gagal memproses login`);
       errEl.classList.remove('hidden');
     }
   } catch (err) {

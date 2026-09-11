@@ -12,6 +12,21 @@ let expressApp = null;
 
 export default async function handler(req, res) {
   try {
+    // Restore original URL if rewritten by Vercel
+    if (req.url) {
+      try {
+        const urlObj = new URL(req.url, 'http://localhost');
+        const customUrl = urlObj.searchParams.get('__url');
+        if (customUrl) {
+          urlObj.searchParams.delete('__url');
+          const remainingQuery = urlObj.searchParams.toString();
+          req.url = customUrl + (remainingQuery ? `?${remainingQuery}` : '');
+        }
+      } catch {
+        // ignore url parsing error
+      }
+    }
+
     if (!expressApp) {
       expressApp = await getApp();
     }
