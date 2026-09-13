@@ -51,6 +51,60 @@ function buildPlayerUrl(fileId) {
   return `${base}${path}`;
 }
 
+const playCooldownMap = new Map();
+
+function getClientIp(req) {
+  const cf = req.headers['cf-connecting-ip'];
+  if (typeof cf === 'string' && cf.trim()) return cf.trim();
+  const xReal = req.headers['x-real-ip'];
+  if (typeof xReal === 'string' && xReal.trim()) return xReal.trim();
+  const xf = req.headers['x-forwarded-for'];
+  if (typeof xf === 'string' && xf.trim()) return xf.split(',')[0].trim();
+  return req.socket?.remoteAddress || req.ip || 'unknown';
+}
+
+function isRangeContinuation(rangeHeader) {
+  if (!rangeHeader || typeof rangeHeader !== 'string') return false;
+  const s = rangeHeader.trim().toLowerCase();
+  if (!s.startsWith('bytes=')) return false;
+
+  const spec = s.slice(6).trim();
+  if (spec.startsWith('-')) {
+    return true;
+  }
+
+  const parts = spec.split('-');
+  const start = Number.parseInt(parts[0], 10);
+  if (Number.isFinite(start) && start > 0) {
+    return true;
+  }
+
+  return false;
+}
+
+function getPlayCooldownMs() {
+  const envVal = process.env.PLAY_COOLDOWN_SECONDS;
+  const sec = envVal ? Number.parseInt(envVal, 10) : 120;
+  return (Number.isFinite(sec) && sec > 0 ? sec : 120) * 1000;
+}
+
+function isPlayOnCooldown(key, cooldownMs) {
+  const now = Date.now();
+  const last = playCooldownMap.get(key);
+  if (last && now - last < cooldownMs) {
+    return true;
+  }
+  playCooldownMap.set(key, now);
+
+  if (playCooldownMap.size > 5000) {
+    const cutoff = now - cooldownMs * 2;
+    for (const [k, ts] of playCooldownMap.entries()) {
+      if (ts < cutoff) playCooldownMap.delete(k);
+    }
+  }
+  return false;
+}
+
 function buildTitleQuery(q) {
   const s = String(q || '').trim();
   if (!s) return null;
@@ -491,6 +545,24 @@ async function buildApp() {
       const url = buildPlayerUrl(driveFileId);
       if (!url) return res.status(500).json({ error: 'missing_PLAYER_BASE_URL' });
 
+      // If this request is a Range continuation (e.g. bytes=100000-), it's streaming a subsequent chunk.
+      // Redirect immediately without counting as a new play hit.
+      if (isRangeContinuation(req.headers.range)) {
+        res.status(307);
+        res.setHeader('Location', url);
+        return res.end();
+      }
+
+      // Check cooldown for this IP/client and driveFileId to debounce rapid requests / initial buffering
+      const clientIp = getClientIp(req);
+      const cooldownKey = `${clientIp}:${driveFileId}`;
+      const cooldownMs = getPlayCooldownMs();
+      if (isPlayOnCooldown(cooldownKey, cooldownMs)) {
+        res.status(307);
+        res.setHeader('Location', url);
+        return res.end();
+      }
+
       const now = new Date();
 
       const playRes = await plays.findOneAndUpdate(
@@ -568,6 +640,24 @@ async function buildApp() {
 
       const url = buildPlayerUrl(chosenDriveFileId);
       if (!url) return res.status(500).json({ error: 'missing_PLAYER_BASE_URL' });
+
+      // If this request is a Range continuation (e.g. bytes=100000-), it's streaming a subsequent chunk.
+      // Redirect immediately without counting as a new play hit.
+      if (isRangeContinuation(req.headers.range)) {
+        res.status(307);
+        res.setHeader('Location', url);
+        return res.end();
+      }
+
+      // Check cooldown for this IP/client and movieId to debounce rapid requests / initial buffering
+      const clientIp = getClientIp(req);
+      const cooldownKey = `${clientIp}:${movieId}`;
+      const cooldownMs = getPlayCooldownMs();
+      if (isPlayOnCooldown(cooldownKey, cooldownMs)) {
+        res.status(307);
+        res.setHeader('Location', url);
+        return res.end();
+      }
 
       const now = new Date();
 
