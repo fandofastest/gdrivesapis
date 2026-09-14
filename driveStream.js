@@ -112,7 +112,21 @@ function guessContentType(fileName) {
   return 'application/octet-stream';
 }
 
+const COMMON_EXTS = ['.mp4', '.mkv', '.webm', '.avi', '.mov', '.bin'];
+
 async function findCachedFileById(cacheDir, fileId) {
+  // Fast path: direct stat lookup for common video extensions (avoids scanning 6k+ directory entries)
+  for (const ext of COMMON_EXTS) {
+    const fileName = `${fileId}${ext}`;
+    const full = path.join(cacheDir, fileName);
+    try {
+      const st = await fsp.stat(full);
+      if (st.isFile()) {
+        return { filePath: full, fileName, stat: st };
+      }
+    } catch {}
+  }
+
   const entries = await fsp.readdir(cacheDir, { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
     if (!e.isFile()) continue;
@@ -412,6 +426,77 @@ export async function streamHandler(req, res) {
 
   const cached = await findCachedFileById(cacheDir, fileId);
 
+  if (cached) {
+    const metaPath = `${cached.filePath}.json`;
+    const meta = await fsp
+      .readFile(metaPath, 'utf8')
+      .then((s) => JSON.parse(s))
+      .catch(() => ({}));
+
+    const fileSize = meta.size ? Number(meta.size) : cached.stat.size;
+    const rangeMetaPath = `${cached.filePath}.ranges.json`;
+    const rangeState = await loadRangeMeta(rangeMetaPath, { size: fileSize, mimeType: meta.mimeType || null });
+    const fullCached = isFullyCached(rangeState.ranges, fileSize);
+
+    const publicBaseUrl = getCachePublicBaseUrl();
+    if (fullCached && publicBaseUrl) {
+      // Offload serving to Nginx/static when fully cached.
+      // Use 307 to preserve Range header behavior in clients.
+      const url = joinUrl(publicBaseUrl, cached.fileName);
+      console.log(`[${nowIso()}] [STREAM] fileId=${fileId} ip=${ip} REDIRECT_FULL_CACHE -> ${url}`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Range, DNT, User-Agent, X-Requested-With, If-Modified-Since, Cache-Control, Content-Type');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+      res.status(307);
+      res.setHeader('Location', url);
+      res.end();
+      return;
+    }
+
+    const contentType = meta.mimeType || guessContentType(meta.name || cached.fileName);
+
+    // If this is a partial/sparse cache, only serve from disk if the requested range is covered.
+    if (rangeHeader) {
+      const r = parseRange(rangeHeader, fileSize);
+      if (r && rangeCovered(rangeState.ranges, r.start, r.end)) {
+        console.log(
+          `[${nowIso()}] [STREAM] fileId=${fileId} ip=${ip} CACHE_HIT_PARTIAL range=${rangeHeader}`,
+        );
+
+        await fsp.utimes(cached.filePath, new Date(), new Date()).catch(() => {});
+        await streamFromDisk({
+          req,
+          res,
+          filePath: cached.filePath,
+          fileSize,
+          contentType,
+          rangeHeader,
+        });
+
+        evictIfNeeded({ cacheDir, maxBytes }).catch(() => {});
+        return;
+      }
+    } else if (fullCached) {
+      console.log(
+        `[${nowIso()}] [STREAM] fileId=${fileId} ip=${ip} CACHE_HIT range=none`,
+      );
+
+      await fsp.utimes(cached.filePath, new Date(), new Date()).catch(() => {});
+      await streamFromDisk({
+        req,
+        res,
+        filePath: cached.filePath,
+        fileSize,
+        contentType,
+        rangeHeader: null,
+      });
+
+      evictIfNeeded({ cacheDir, maxBytes }).catch(() => {});
+      return;
+    }
+  }
+
   try {
     const drive = await getDriveClient();
 
@@ -425,45 +510,10 @@ export async function streamHandler(req, res) {
       const fileSize = meta.size ? Number(meta.size) : cached.stat.size;
       const rangeMetaPath = `${cached.filePath}.ranges.json`;
       const rangeState = await loadRangeMeta(rangeMetaPath, { size: fileSize, mimeType: meta.mimeType || null });
-      const fullCached = isFullyCached(rangeState.ranges, fileSize);
-
-      const publicBaseUrl = getCachePublicBaseUrl();
-      if (fullCached && publicBaseUrl) {
-        // Offload serving to Nginx/static when fully cached.
-        // Use 307 to preserve Range header behavior in clients.
-        const url = joinUrl(publicBaseUrl, cached.fileName);
-        console.log(`[${nowIso()}] [STREAM] fileId=${fileId} ip=${ip} REDIRECT_FULL_CACHE -> ${url}`);
-        res.status(307);
-        res.setHeader('Location', url);
-        res.end();
-        return;
-      }
-
       const contentType = meta.mimeType || guessContentType(meta.name || cached.fileName);
 
-      // If this is a partial/sparse cache, only serve from disk if the requested range is covered.
       if (rangeHeader) {
         const r = parseRange(rangeHeader, fileSize);
-        if (r && rangeCovered(rangeState.ranges, r.start, r.end)) {
-          console.log(
-            `[${nowIso()}] [STREAM] fileId=${fileId} ip=${ip} CACHE_HIT_PARTIAL range=${rangeHeader}`,
-          );
-
-          await fsp.utimes(cached.filePath, new Date(), new Date()).catch(() => {});
-          await streamFromDisk({
-            req,
-            res,
-            filePath: cached.filePath,
-            fileSize,
-            contentType,
-            rangeHeader,
-          });
-
-          evictIfNeeded({ cacheDir, maxBytes }).catch(() => {});
-          return;
-        }
-
-        // Not cached for that range: proxy and download aligned chunks.
         console.log(
           `[${nowIso()}] [STREAM] fileId=${fileId} ip=${ip} CACHE_PARTIAL_MISS range=${rangeHeader}`,
         );

@@ -30,60 +30,170 @@ function parseBytes(input) {
   return Math.floor(n * mult);
 }
 
+export function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  if (!bytes || Number.isNaN(bytes)) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+}
+
 export function getCacheConfig() {
   const cacheDir = envOrDefault('CACHE_DIR', path.resolve('./cache'));
   const max = envOrDefault('CACHE_MAX_BYTES', '3.5tb');
   const maxBytes = parseBytes(max) ?? Math.floor(3.5 * 1024 ** 4);
-  return { cacheDir, maxBytes };
+  const minFreePercent = Number(envOrDefault('CACHE_MIN_FREE_PERCENT', '10')) || 10;
+  const targetFreePercent = Number(envOrDefault('CACHE_TARGET_FREE_PERCENT', '15')) || 15;
+  return { cacheDir, maxBytes, minFreePercent, targetFreePercent };
 }
 
 export async function ensureCacheDir(cacheDir) {
   await fs.mkdir(cacheDir, { recursive: true });
 }
 
+export async function getDiskSpace(targetPath) {
+  try {
+    const s = await fs.statfs(targetPath);
+    const totalBlocks = Number(s.blocks);
+    const availBlocks = Number(s.bavail);
+    const bsize = Number(s.bsize);
+    const totalBytes = totalBlocks * bsize;
+    const freeBytes = availBlocks * bsize;
+    const freePercent = totalBlocks > 0 ? (availBlocks / totalBlocks) * 100 : 100;
+    return {
+      totalBytes,
+      freeBytes,
+      freePercent,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getDirectorySizeBytes(cacheDir) {
   let total = 0;
-  const entries = await fs.readdir(cacheDir, { withFileTypes: true });
+  const entries = await fs.readdir(cacheDir, { withFileTypes: true }).catch(() => []);
   for (const e of entries) {
     if (!e.isFile()) continue;
     if (e.name.endsWith('.part')) continue;
     if (e.name.endsWith('.json')) continue;
-    const st = await fs.stat(path.join(cacheDir, e.name));
-    total += st.size;
+    const st = await fs.stat(path.join(cacheDir, e.name)).catch(() => null);
+    if (st) total += st.size;
   }
   return total;
 }
 
-export async function evictIfNeeded({ cacheDir, maxBytes }) {
-  await ensureCacheDir(cacheDir);
+let isEvicting = false;
 
-  let total = await getDirectorySizeBytes(cacheDir);
-  if (total <= maxBytes) return;
+export async function evictIfNeeded(options = {}) {
+  if (isEvicting) return;
+  isEvicting = true;
 
-  const entries = await fs.readdir(cacheDir, { withFileTypes: true });
-  const files = [];
+  try {
+    const cfg = getCacheConfig();
+    const cacheDir = options.cacheDir || cfg.cacheDir;
+    const maxBytes = options.maxBytes ?? cfg.maxBytes;
+    const minFreePercent = options.minFreePercent ?? cfg.minFreePercent;
+    const targetFreePercent = options.targetFreePercent ?? cfg.targetFreePercent;
 
-  for (const e of entries) {
-    if (!e.isFile()) continue;
-    if (e.name.endsWith('.part')) continue;
-    if (e.name.endsWith('.json')) continue;
-    const full = path.join(cacheDir, e.name);
-    const st = await fs.stat(full);
-    files.push({ full, mtimeMs: st.mtimeMs, size: st.size });
-  }
+    await ensureCacheDir(cacheDir);
 
-  files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    let disk = await getDiskSpace(cacheDir);
+    let total = await getDirectorySizeBytes(cacheDir);
 
-  for (const f of files) {
-    if (total <= maxBytes) break;
-    try {
-      await fs.unlink(f.full);
-      total -= f.size;
-      const meta = `${f.full}.json`;
-      await fs.unlink(meta).catch(() => {});
-      console.log(`[CACHE] evicted ${path.basename(f.full)} size=${f.size}`);
-    } catch {
-      // ignore
+    const diskIsLow = disk !== null && disk.freePercent <= minFreePercent;
+    const cacheIsOverMax = maxBytes > 0 && total > maxBytes;
+
+    if (!diskIsLow && !cacheIsOverMax) {
+      return;
     }
+
+    console.log(
+      `[CACHE] Eviction check triggered. Disk free: ${disk ? disk.freePercent.toFixed(2) + '%' : 'unknown'} (threshold: <= ${minFreePercent}%), Cache used: ${formatBytes(total)} (max: ${formatBytes(maxBytes)})`
+    );
+
+    const entries = await fs.readdir(cacheDir, { withFileTypes: true }).catch(() => []);
+    const files = [];
+
+    for (const e of entries) {
+      if (!e.isFile()) continue;
+      if (e.name.endsWith('.part')) continue;
+      if (e.name.endsWith('.json')) continue;
+      const full = path.join(cacheDir, e.name);
+      const st = await fs.stat(full).catch(() => null);
+      if (!st) continue;
+
+      // LRU: use the newest of atime or mtime to identify when file was last accessed/streamed
+      const lastAccessTime = Math.max(st.atimeMs || 0, st.mtimeMs || 0);
+      files.push({ full, lastAccessTime, size: st.size });
+    }
+
+    // Sort ascending: oldest accessed files first (Least Recently Used)
+    files.sort((a, b) => a.lastAccessTime - b.lastAccessTime);
+
+    let evictedCount = 0;
+    let evictedBytes = 0;
+
+    for (const f of files) {
+      // Check if cache quota and disk free percentage are now satisfactory
+      const currentCacheOk = maxBytes <= 0 || total <= maxBytes;
+
+      let currentDiskOk = true;
+      if (minFreePercent > 0) {
+        disk = await getDiskSpace(cacheDir);
+        if (disk !== null) {
+          currentDiskOk = disk.freePercent >= targetFreePercent;
+        }
+      }
+
+      if (currentCacheOk && currentDiskOk) {
+        break;
+      }
+
+      try {
+        await fs.unlink(f.full);
+        total -= f.size;
+        evictedBytes += f.size;
+        evictedCount += 1;
+
+        // Clean up corresponding metadata files if any
+        await fs.unlink(`${f.full}.json`).catch(() => {});
+        await fs.unlink(`${f.full}.ranges.json`).catch(() => {});
+        await fs.unlink(`${f.full}.part`).catch(() => {});
+
+        console.log(
+          `[CACHE] Evicted least recently accessed: ${path.basename(f.full)} (${formatBytes(f.size)})`
+        );
+      } catch (err) {
+        console.warn(`[CACHE] Failed to evict ${f.full}: ${err?.message || err}`);
+      }
+    }
+
+    if (evictedCount > 0) {
+      const updatedDisk = await getDiskSpace(cacheDir);
+      console.log(
+        `[CACHE] Eviction complete. Removed ${evictedCount} file(s) (${formatBytes(evictedBytes)}). New disk free: ${updatedDisk ? updatedDisk.freePercent.toFixed(2) + '%' : 'unknown'}, cache size: ${formatBytes(total)}`
+      );
+    }
+  } catch (err) {
+    console.error(`[CACHE] Eviction error:`, err);
+  } finally {
+    isEvicting = false;
   }
 }
+
+// Background periodic check every 15 minutes
+let periodicTimer = null;
+export function startPeriodicCacheCheck(intervalMs = 15 * 60 * 1000) {
+  if (periodicTimer) return;
+  periodicTimer = setInterval(() => {
+    evictIfNeeded().catch(() => {});
+  }, intervalMs);
+  if (periodicTimer.unref) {
+    periodicTimer.unref();
+  }
+}
+
+// Automatically start background checker
+startPeriodicCacheCheck();

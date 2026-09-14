@@ -10,7 +10,7 @@ import {
 } from './auth.js';
 import { scanManager } from './scanManager.js';
 import { connectMongo } from './db.js';
-import { getCacheConfig } from './cacheManager.js';
+import { getCacheConfig, getDiskSpace } from './cacheManager.js';
 import { playEvents } from './playEvents.js';
 
 function getAdminPassword() {
@@ -130,11 +130,30 @@ export function createAdminRouter() {
         mongoStatus.error = err?.message || String(err);
       }
 
-      let cacheStats = { cacheDir: '', maxBytes: 0, usedBytes: 0, fileCount: 0 };
+      let cacheStats = {
+        cacheDir: '',
+        maxBytes: 0,
+        usedBytes: 0,
+        fileCount: 0,
+        minFreePercent: 10,
+        targetFreePercent: 15,
+        disk: null,
+      };
       try {
         const cfg = getCacheConfig();
         cacheStats.cacheDir = cfg.cacheDir;
         cacheStats.maxBytes = cfg.maxBytes;
+        cacheStats.minFreePercent = cfg.minFreePercent;
+        cacheStats.targetFreePercent = cfg.targetFreePercent;
+
+        const disk = await getDiskSpace(cfg.cacheDir);
+        if (disk) {
+          cacheStats.disk = {
+            totalBytes: disk.totalBytes,
+            freeBytes: disk.freeBytes,
+            freePercent: Number(disk.freePercent.toFixed(2)),
+          };
+        }
 
         const entries = await fs.readdir(cfg.cacheDir, { withFileTypes: true }).catch(() => []);
         let totalSize = 0;
